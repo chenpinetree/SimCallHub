@@ -426,7 +426,11 @@ func (s *Session) ReadData(ctx context.Context, cmd string, timeout time.Duratio
 			switch {
 			case line == "OK":
 				if block == nil {
-					return nil, &CommandError{Command: cmd, Result: "OK without data"}
+					select {
+					case block = <-s.data:
+					default:
+						return nil, &CommandError{Command: cmd, Result: "OK without data"}
+					}
 				}
 				return block, nil
 			case isFinalError(line):
