@@ -1,0 +1,26 @@
+services:
+  sim_call_web_sip:
+    build:
+      context: .
+    image: sim_call_web_sip:local
+    container_name: sim_call_web_sip
+    restart: unless-stopped
+    privileged: true
+    devices:
+      - /dev/bus/usb:/dev/bus/usb
+    volumes:
+      - ./data:/data
+    ports:
+      # Web 管理后台端口
+      - "9081:9081"
+      # SIP VoIP 分机注册与信令端口 (UDP)
+      - "5060:5060/udp"
+      # RTP 通话音频媒体流端口范围 (UDP)
+      - "20000-20100:20000-20100/udp"
+    environment:
+      - TZ=Asia/Shanghai
+      - HAOBOT_DATA=/data
+      - SIM_SIP_USER=1001          # SIP 分机号
+      - SIM_SIP_PASS=12345678      # SIP 分机密码
+      - SIM_SIP_LISTEN=0.0.0.0:5060
+    command: ["serve", "-listen", "0.0.0.0", "-transport", "usb"]
