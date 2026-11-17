@@ -15,8 +15,8 @@ import (
 type CallDirection int
 
 const (
-	DirectionInbound CallDirection = iota // Incoming cellular call -> ringing SIP clients
-	DirectionOutbound                     // SIP client dialed -> outgoing cellular call
+	DirectionInbound  CallDirection = iota // Incoming cellular call -> ringing SIP clients
+	DirectionOutbound                      // SIP client dialed -> outgoing cellular call
 )
 
 // CallSession coordinates one active SIP-to-Cellular phone call.
