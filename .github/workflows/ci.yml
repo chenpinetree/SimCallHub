@@ -6,7 +6,7 @@ on:
   pull_request:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   go:
@@ -50,10 +50,13 @@ jobs:
           cache-dependency-path: ui/pnpm-lock.yaml
       - name: Build
         run: make ui
-      - name: Built UI is committed
+      - name: Commit and push built UI if changed
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: |
-          git status --porcelain internal/agent/web/dist
-          test -z "$(git status --porcelain internal/agent/web/dist)" || {
-            echo "internal/agent/web/dist is out of date: run 'make ui' and commit it." >&2
-            exit 1
-          }
+          if [ -n "$(git status --porcelain internal/agent/web/dist)" ]; then
+            git config --local user.name "github-actions[bot]"
+            git config --local user.email "github-actions[bot]@users.noreply.github.com"
+            git add internal/agent/web/dist
+            git commit -m "build(ui): bundle latest admin ui [skip ci]"
+            git push
+          fi
