@@ -37,7 +37,7 @@ func runStart(args []string) error {
 	if len(args) > 0 && (args[0] == "-h" || args[0] == "--help") {
 		fmt.Fprint(os.Stderr, `用法: haobot-agent start [serve 的参数]
 
-在后台启动号小助，关掉终端也会继续运行，并显示管理后台地址和首次登录密码。
+在后台启动SIMs Manager，关掉终端也会继续运行，并显示管理后台地址和首次登录密码。
 参数和 serve 相同，另外 -lan 等于 -listen 0.0.0.0（允许局域网访问）。
 参数会被记住：以后不带参数运行 start，沿用上一次的参数。
 

@@ -131,7 +131,7 @@ func CallNote(e service.CallEvent, name string) Note {
 
 // TestNote is sent by the settings page's test button.
 func TestNote(kind Kind) Note {
-	return Note{Icon: "✅", Title: "号小助测试消息", Color: "green",
+	return Note{Icon: "✅", Title: "SIMs Manager测试消息", Color: "green",
 		Body: "收到这条消息，说明新短信、来电和 AI 接听小结会推送到" + kind.Label() + "。"}
 }
 
@@ -193,7 +193,7 @@ func (n Note) html() string {
 
 // BotKeyword ends every group-bot message, so it can be the bot's custom
 // keyword.
-const BotKeyword = "号小助"
+const BotKeyword = "SIMs Manager"
 
 // mdSafe keeps message text from being read as markup by swapping the
 // characters these dialects use for full-width look-alikes.

@@ -285,7 +285,7 @@ func TestBotErrorsExplainedAndScrubbed(t *testing.T) {
 	srv := ding.server(t)
 	bots := Bots{Client: srv.Client()}
 	err := bots.Send(context.Background(), KindDingTalk, Webhook{URL: srv.URL + "/robot/send?access_token=tok"}, TestNote(KindDingTalk))
-	if err == nil || !strings.Contains(err.Error(), "号小助") {
+	if err == nil || !strings.Contains(err.Error(), "SIMs Manager") {
 		t.Fatalf("dingtalk error = %v", err)
 	}
 	if _, retry := retryable(err, 0); retry {

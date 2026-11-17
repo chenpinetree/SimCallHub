@@ -1,4 +1,4 @@
-// Command haobot-agent (号小助) receives SMS from a cellular modem (Quectel EC20 and
+// Command haobot-agent (SIMs Manager) receives SMS from a cellular modem (Quectel EC20 and
 // similar), stores and classifies them in a local SQLite database, and serves
 // a password-protected admin UI for messages and the device.
 package main
@@ -52,7 +52,7 @@ const usage = `用法:
   haobot-agent backup [参数]        备份数据库、密钥和通话录音（运行中也可以备份）
   haobot-agent restore [参数] 文件  在新机器上恢复备份（先停止 Agent）
   haobot-agent start [参数]         在后台启动（参数同 serve，会被记住；-lan 允许局域网访问）
-  haobot-agent stop                 停止后台运行的号小助
+  haobot-agent stop                 停止后台运行的SIMs Manager
   haobot-agent status               查看是否在运行、管理后台地址
   haobot-agent udev-rules           输出 Linux 的 udev 规则（模组权限、避开 ModemManager）
   haobot-agent version              显示版本
@@ -424,7 +424,7 @@ func runServe(args []string) error {
 		ports = strings.Join(names, ", ")
 	}
 	log.Info("haobot-agent started", "version", buildVersion(), "web", scheme+"://"+addr, "data", *dataDir, "modems", ports)
-	devices.Note(ctx, "info", "号小助已启动")
+	devices.Note(ctx, "info", "SIMs Manager已启动")
 
 	select {
 	case err := <-errc:

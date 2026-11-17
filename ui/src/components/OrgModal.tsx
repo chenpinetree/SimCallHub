@@ -60,7 +60,7 @@ export function OrgModal({ initial, categories, onClose }: { initial: YellowOrg;
       open
       onClose={onClose}
       title={isNew ? "新建黄页机构" : `编辑「${initial.name}」`}
-      description={initial.builtin ? "修改只保存在这台号小助上，随时可以恢复成内置的样子。" : "不在通讯录里的号码会用黄页里的名字和 logo 显示，短信签名也会按机构名称匹配 logo。"}
+      description={initial.builtin ? "修改只保存在这台SIMs Manager上，随时可以恢复成内置的样子。" : "不在通讯录里的号码会用黄页里的名字和 logo 显示，短信签名也会按机构名称匹配 logo。"}
       footer={
         <>
           <Button variant="ghost" onClick={onClose}>

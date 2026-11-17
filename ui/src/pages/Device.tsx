@@ -623,7 +623,7 @@ const quickCommands = ["ATI", "AT+CSQ", "AT+COPS?", "AT+CPIN?", "AT+CREG?", "AT+
 function ConsoleCard({ d }: { d: DeviceStatus }) {
   const connected = d.connected;
   const [cmd, setCmd] = useState("");
-  const [lines, setLines] = useState<ConsoleLine[]>([{ kind: "out", text: "号小助 AT 控制台。指令与短信同步排队执行，互不干扰。↑/↓ 浏览历史。" }]);
+  const [lines, setLines] = useState<ConsoleLine[]>([{ kind: "out", text: "SIMs Manager AT 控制台。指令与短信同步排队执行，互不干扰。↑/↓ 浏览历史。" }]);
   const [history, setHistory] = useState<string[]>([]);
   const [cursor, setCursor] = useState(-1);
   const [busy, setBusy] = useState(false);

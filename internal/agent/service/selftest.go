@@ -48,7 +48,7 @@ func (m *Manager) SelfTest(ctx context.Context, deviceID, to string) error {
 	svc.update(func(snap *Snapshot) {
 		snap.Health.SelfTest = &SelfTest{State: "running", To: to, StartedAt: started}
 	})
-	out, err := svc.Send(ctx, to, "号小助收发自检 "+token+"（自动发送，收到后自动删除）")
+	out, err := svc.Send(ctx, to, "SIMs Manager收发自检 "+token+"（自动发送，收到后自动删除）")
 	if err != nil {
 		m.finishSelfTest(svc, token, 0, false, 0, "发送失败："+err.Error())
 		return err
