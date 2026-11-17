@@ -18,8 +18,8 @@ import (
 	"github.com/warthog618/sms"
 	"github.com/warthog618/sms/encoding/tpdu"
 
-	"github.com/chenpinetree/sim_call_web_sip/internal/agent/modem"
-	"github.com/chenpinetree/sim_call_web_sip/internal/agent/store"
+	"github.com/chenpinetree/SimCallHub/internal/agent/modem"
+	"github.com/chenpinetree/SimCallHub/internal/agent/store"
 )
 
 // fakeStorage emulates CPMS/CMGL/CMGD over a pipe with per-storage contents.

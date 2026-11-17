@@ -1,9 +1,9 @@
 services:
-  sim_call_web_sip:
+  simcallhub:
     build:
       context: .
-    image: sim_call_web_sip:local
-    container_name: sim_call_web_sip
+    image: simcallhub:local
+    container_name: simcallhub
     restart: unless-stopped
     privileged: true
     devices:

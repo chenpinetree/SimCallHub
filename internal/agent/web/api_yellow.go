@@ -11,8 +11,8 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/chenpinetree/sim_call_web_sip/internal/agent/phonebook"
-	"github.com/chenpinetree/sim_call_web_sip/internal/agent/store"
+	"github.com/chenpinetree/SimCallHub/internal/agent/phonebook"
+	"github.com/chenpinetree/SimCallHub/internal/agent/store"
 )
 
 // The yellow pages ship with the agent; the user's changes to them are

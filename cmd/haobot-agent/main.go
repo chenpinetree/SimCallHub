@@ -29,19 +29,19 @@ import (
 
 	"golang.org/x/term"
 
-	"github.com/chenpinetree/sim_call_web_sip/internal/agent/assistant"
-	"github.com/chenpinetree/sim_call_web_sip/internal/agent/classify"
-	"github.com/chenpinetree/sim_call_web_sip/internal/agent/modem"
-	"github.com/chenpinetree/sim_call_web_sip/internal/agent/notify"
-	"github.com/chenpinetree/sim_call_web_sip/internal/agent/pdu"
-	"github.com/chenpinetree/sim_call_web_sip/internal/agent/phonebook"
-	"github.com/chenpinetree/sim_call_web_sip/internal/agent/secret"
-	"github.com/chenpinetree/sim_call_web_sip/internal/agent/service"
-	"github.com/chenpinetree/sim_call_web_sip/internal/agent/settings"
-	"github.com/chenpinetree/sim_call_web_sip/internal/agent/sip"
-	"github.com/chenpinetree/sim_call_web_sip/internal/agent/store"
-	"github.com/chenpinetree/sim_call_web_sip/internal/agent/transport"
-	"github.com/chenpinetree/sim_call_web_sip/internal/agent/web"
+	"github.com/chenpinetree/SimCallHub/internal/agent/assistant"
+	"github.com/chenpinetree/SimCallHub/internal/agent/classify"
+	"github.com/chenpinetree/SimCallHub/internal/agent/modem"
+	"github.com/chenpinetree/SimCallHub/internal/agent/notify"
+	"github.com/chenpinetree/SimCallHub/internal/agent/pdu"
+	"github.com/chenpinetree/SimCallHub/internal/agent/phonebook"
+	"github.com/chenpinetree/SimCallHub/internal/agent/secret"
+	"github.com/chenpinetree/SimCallHub/internal/agent/service"
+	"github.com/chenpinetree/SimCallHub/internal/agent/settings"
+	"github.com/chenpinetree/SimCallHub/internal/agent/sip"
+	"github.com/chenpinetree/SimCallHub/internal/agent/store"
+	"github.com/chenpinetree/SimCallHub/internal/agent/transport"
+	"github.com/chenpinetree/SimCallHub/internal/agent/web"
 )
 
 const usage = `用法:

@@ -12,9 +12,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/chenpinetree/sim_call_web_sip/internal/agent/modem"
-	"github.com/chenpinetree/sim_call_web_sip/internal/agent/store"
-	"github.com/chenpinetree/sim_call_web_sip/internal/agent/transport"
+	"github.com/chenpinetree/SimCallHub/internal/agent/modem"
+	"github.com/chenpinetree/SimCallHub/internal/agent/store"
+	"github.com/chenpinetree/SimCallHub/internal/agent/transport"
 )
 
 // TopicCalls is published when the call log changes.

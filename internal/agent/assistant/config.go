@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/chenpinetree/sim_call_web_sip/internal/agent/classify"
+	"github.com/chenpinetree/SimCallHub/internal/agent/classify"
 )
 
 // Defaults for a configuration that was never saved.

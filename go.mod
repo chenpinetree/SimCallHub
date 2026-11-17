@@ -1,4 +1,4 @@
-module github.com/chenpinetree/sim_call_web_sip
+module github.com/chenpinetree/SimCallHub
 
 go 1.25.0
 

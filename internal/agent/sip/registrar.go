@@ -32,7 +32,7 @@ type Registrar struct {
 // NewRegistrar creates a registrar with given realm and credentials.
 func NewRegistrar(realm, defaultUser, defaultPass string) *Registrar {
 	if realm == "" {
-		realm = "sim_call_web_sip"
+		realm = "SimCallHub"
 	}
 	r := &Registrar{
 		realm:      realm,

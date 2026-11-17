@@ -6,9 +6,9 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/chenpinetree/sim_call_web_sip/internal/agent/mms"
-	"github.com/chenpinetree/sim_call_web_sip/internal/agent/modem"
-	"github.com/chenpinetree/sim_call_web_sip/internal/agent/store"
+	"github.com/chenpinetree/SimCallHub/internal/agent/mms"
+	"github.com/chenpinetree/SimCallHub/internal/agent/modem"
+	"github.com/chenpinetree/SimCallHub/internal/agent/store"
 )
 
 const (

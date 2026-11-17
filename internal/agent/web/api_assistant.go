@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/chenpinetree/sim_call_web_sip/internal/agent/assistant"
-	"github.com/chenpinetree/sim_call_web_sip/internal/agent/service"
+	"github.com/chenpinetree/SimCallHub/internal/agent/assistant"
+	"github.com/chenpinetree/SimCallHub/internal/agent/service"
 )
 
 type assistantJSON struct {

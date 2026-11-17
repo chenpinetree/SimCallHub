@@ -17,7 +17,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/chenpinetree/sim_call_web_sip/internal/agent/store"
+	"github.com/chenpinetree/SimCallHub/internal/agent/store"
 )
 
 // recordingsDir holds call recordings inside the data directory.

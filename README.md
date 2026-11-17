@@ -1,4 +1,4 @@
-# sim_call_web_sip
+# SimCallHub
 
 > 🚀 **4G 模块全能智能电话网关**：在 100% 保留大模型短信智能分类、脱敏推送与 AI 代接的基础上，**原生内嵌纯 Go 实现的轻量 SIP VoIP 分机服务与 SGP.22 eSIM 配置文件管理**。
 >
@@ -53,9 +53,9 @@
 
 ```yaml
 services:
-  sim_call_web_sip:
-    image: chenpinetree/sim_call_web_sip:latest
-    container_name: sim_call_web_sip
+  SimCallHub:
+    image: chenpinetree/SimCallHub:latest
+    container_name: SimCallHub
     restart: unless-stopped
     privileged: true
     devices:
@@ -81,7 +81,7 @@ services:
 启动命令：
 ```bash
 docker-compose up -d
-docker logs -f sim_call_web_sip
+docker logs -f SimCallHub
 ```
 
 ---
@@ -107,10 +107,10 @@ docker logs -f sim_call_web_sip
 ```bash
 # 本地编译测试
 go test ./internal/agent/sip/...
-go build -o bin/sim_call_web_sip ./cmd/haobot-agent
+go build -o bin/SimCallHub ./cmd/haobot-agent
 
 # 构建跨平台 Linux Docker 镜像
-docker build --platform linux/amd64 -t sim_call_web_sip:local .
+docker build --platform linux/amd64 -t SimCallHub:local .
 ```
 
 ---

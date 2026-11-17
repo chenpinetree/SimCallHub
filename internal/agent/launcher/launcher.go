@@ -21,7 +21,7 @@ import (
 	"text/template"
 	"time"
 
-	"github.com/chenpinetree/sim_call_web_sip/internal/agent/transport"
+	"github.com/chenpinetree/SimCallHub/internal/agent/transport"
 )
 
 // Files in the data directory.

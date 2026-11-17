@@ -10,8 +10,8 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/chenpinetree/sim_call_web_sip/internal/agent/phonebook"
-	"github.com/chenpinetree/sim_call_web_sip/internal/agent/store"
+	"github.com/chenpinetree/SimCallHub/internal/agent/phonebook"
+	"github.com/chenpinetree/SimCallHub/internal/agent/store"
 )
 
 // maxAvatar bounds a contact picture; the UI sends a small JPEG, and the

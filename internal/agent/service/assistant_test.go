@@ -12,8 +12,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/chenpinetree/sim_call_web_sip/internal/agent/modem"
-	"github.com/chenpinetree/sim_call_web_sip/internal/agent/store"
+	"github.com/chenpinetree/SimCallHub/internal/agent/modem"
+	"github.com/chenpinetree/SimCallHub/internal/agent/store"
 )
 
 // fakeAssistant answers at once, says one frame, waits to hear the caller

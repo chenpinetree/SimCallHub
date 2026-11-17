@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/chenpinetree/sim_call_web_sip/internal/agent/modem"
+	"github.com/chenpinetree/SimCallHub/internal/agent/modem"
 )
 
 // ErrLastAttempt means the operation would use the SIM's last PIN attempt;

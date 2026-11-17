@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/chenpinetree/sim_call_web_sip/internal/agent/modem"
+	"github.com/chenpinetree/SimCallHub/internal/agent/modem"
 )
 
 // Standard GSMA SGP.22 eSIM AID for Issuer Security Domain Root (ISD-R).

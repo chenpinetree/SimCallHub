@@ -12,8 +12,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/chenpinetree/sim_call_web_sip/internal/agent/classify"
-	"github.com/chenpinetree/sim_call_web_sip/internal/agent/service"
+	"github.com/chenpinetree/SimCallHub/internal/agent/classify"
+	"github.com/chenpinetree/SimCallHub/internal/agent/service"
 )
 
 // Agent is the call assistant; it implements service.Assistant.

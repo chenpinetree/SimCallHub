@@ -20,7 +20,7 @@ func GenerateSDP(localIP string, rtpPort int) string {
 	}
 	return fmt.Sprintf("v=0\r\n"+
 		"o=- %d %d IN IP4 %s\r\n"+
-		"s=sim_call_web_sip\r\n"+
+		"s=SimCallHub\r\n"+
 		"c=IN IP4 %s\r\n"+
 		"t=0 0\r\n"+
 		"m=audio %d RTP/AVP 0 8\r\n"+
