@@ -15,12 +15,14 @@ import { HealthCard } from "../components/HealthCard";
 import { ForwardingCard } from "../components/ForwardingCard";
 import { DeviceAvatar, DeviceIdentity } from "../components/DeviceIdentity";
 import { AutoUnlock, PinProtectionNote } from "../components/AutoUnlock";
+import { ESimCard } from "../components/ESimCard";
 
-type DeviceTab = "status" | "sim" | "calls" | "maintain";
+type DeviceTab = "status" | "sim" | "esim" | "calls" | "maintain";
 
 const deviceTabs: { id: DeviceTab; label: string; icon: LucideIcon }[] = [
   { id: "status", label: "状态", icon: Activity },
   { id: "sim", label: "SIM 卡", icon: CreditCard },
+  { id: "esim", label: "eSIM", icon: Cpu },
   { id: "calls", label: "通话", icon: PhoneForwarded },
   { id: "maintain", label: "维护", icon: Wrench },
 ];
@@ -121,6 +123,7 @@ export function Device() {
                 </Card>
               </div>
             )}
+            {tab === "esim" && <ESimCard d={d} />}
             {tab === "calls" &&
               (d.online ? (
                 <div className="grid gap-5 lg:grid-cols-2">

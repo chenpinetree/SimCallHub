@@ -113,6 +113,12 @@ func (s *Server) Handler() http.Handler {
 	authed("GET /api/devices/{id}/sim-settings", s.getSIMSettings)
 	authed("PUT /api/devices/{id}/sim-settings", s.putSIMSettings)
 
+	authed("GET /api/devices/{id}/esim", s.deviceESimInfo)
+	authed("POST /api/devices/{id}/esim/enable", s.deviceESimEnable)
+	authed("POST /api/devices/{id}/esim/disable", s.deviceESimDisable)
+	authed("POST /api/devices/{id}/esim/delete", s.deviceESimDelete)
+	authed("POST /api/devices/{id}/esim/nickname", s.deviceESimNickname)
+
 	authed("GET /api/conversations", s.listConversations)
 	authed("GET /api/conversations/messages", s.conversationMessages)
 	authed("POST /api/conversations/read", s.readConversation)
