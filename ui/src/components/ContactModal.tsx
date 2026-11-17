@@ -72,7 +72,7 @@ export function ContactModal({ initial, onClose }: { initial: ContactDraft; onCl
       open
       onClose={onClose}
       title={draft.id ? "编辑联系人" : "加入通讯录"}
-      description="通讯录只保存在这台号小助上。短信、通话记录和推送通知里会显示这个名字。"
+      description="通讯录只保存在这台SIMs Manager上。短信、通话记录和推送通知里会显示这个名字。"
       footer={
         <>
           <Button variant="ghost" onClick={onClose}>

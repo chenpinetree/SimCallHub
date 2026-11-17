@@ -177,7 +177,7 @@ export function Brand({ compact }: { compact?: boolean }) {
       </div>
       {!compact && (
         <div>
-          <div className="text-[15px] leading-tight font-semibold tracking-tight">号小助</div>
+          <div className="text-[15px] leading-tight font-semibold tracking-tight">SIMs Manager</div>
           <div className="text-[11px] text-muted">短信和电话的小助理</div>
         </div>
       )}

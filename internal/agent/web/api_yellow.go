@@ -318,7 +318,7 @@ func (s *Server) exportYellow(w http.ResponseWriter, r *http.Request) {
 			file.Orgs = append(file.Orgs, out)
 		}
 	}
-	attachment(w, "号小助黄页-"+time.Now().Format("20060102")+".json")
+	attachment(w, "SIMs Manager黄页-"+time.Now().Format("20060102")+".json")
 	writeJSON(w, http.StatusOK, file)
 }
 
@@ -332,7 +332,7 @@ func (s *Server) importYellow(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if file.Format != yellowFormat || len(file.Orgs) == 0 {
-		writeError(w, http.StatusBadRequest, "这不是号小助导出的黄页文件")
+		writeError(w, http.StatusBadRequest, "这不是SIMs Manager导出的黄页文件")
 		return
 	}
 	edits, err := s.Store.YellowOrgs(r.Context())

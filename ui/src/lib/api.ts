@@ -20,7 +20,7 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
   try {
     resp = await fetch(path, init);
   } catch {
-    throw new ApiError(0, "无法连接到号小助服务，请检查服务是否在运行");
+    throw new ApiError(0, "无法连接到SIMs Manager服务，请检查服务是否在运行");
   }
   const text = await resp.text();
   const data = text ? JSON.parse(text) : {};

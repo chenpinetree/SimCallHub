@@ -102,7 +102,7 @@ func explain(kind Kind, code int, msg string) *botError {
 		case 19022:
 			e.text = "IP 不在机器人的白名单里（" + msg + "）"
 		case 19024:
-			e.text = "消息里没有机器人要求的自定义关键词：可以把关键词设为“号小助”，或关闭关键词校验（" + msg + "）"
+			e.text = "消息里没有机器人要求的自定义关键词：可以把关键词设为“SIMs Manager”，或关闭关键词校验（" + msg + "）"
 		case 9499:
 			e.text = "飞书认为请求格式不对（" + msg + "）"
 		case 11232:
@@ -111,7 +111,7 @@ func explain(kind Kind, code int, msg string) *botError {
 	case KindDingTalk:
 		switch code {
 		case 310000:
-			e.text = "安全设置校验失败：自定义关键词请包含“号小助”，加签请填写“签名密钥”，或检查 IP 白名单（" + msg + "）"
+			e.text = "安全设置校验失败：自定义关键词请包含“SIMs Manager”，加签请填写“签名密钥”，或检查 IP 白名单（" + msg + "）"
 		case 300001, 400101, 400102:
 			e.text = "Webhook 地址的 access_token 无效，机器人可能已被删除（" + msg + "）"
 		case 130101, 410100:

@@ -66,7 +66,7 @@ func (l Launcher) printf(format string, a ...any) { fmt.Fprintf(l.Out, format, a
 func (l Launcher) Start(args []string) error {
 	args = withoutFlag(args, "data")
 	if pid, ok := l.running(); ok {
-		l.printf("号小助已经在运行（进程 %d）。\n", pid)
+		l.printf("SIMs Manager已经在运行（进程 %d）。\n", pid)
 		l.where(l.savedArgs())
 		return nil
 	}
@@ -105,7 +105,7 @@ func (l Launcher) Start(args []string) error {
 		select {
 		case err := <-exited:
 			os.Remove(l.path(pidFile))
-			l.printf("号小助没能启动（%v），最后的日志：\n\n%s\n", err, tail(l.readLog(offset), 15))
+			l.printf("SIMs Manager没能启动（%v），最后的日志：\n\n%s\n", err, tail(l.readLog(offset), 15))
 			return errors.New("启动失败")
 		default:
 		}
@@ -113,11 +113,11 @@ func (l Launcher) Start(args []string) error {
 			break
 		}
 		if time.Now().After(end) {
-			l.printf("号小助已在后台启动（进程 %d），但 30 秒内还没开始监听端口 %d，请看日志：%s\n", pid, port, l.path(logFile))
+			l.printf("SIMs Manager已在后台启动（进程 %d），但 30 秒内还没开始监听端口 %d，请看日志：%s\n", pid, port, l.path(logFile))
 			return nil
 		}
 	}
-	l.printf("✅ 号小助已在后台运行（进程 %d）。\n", pid)
+	l.printf("✅ SIMs Manager已在后台运行（进程 %d）。\n", pid)
 	l.where(args)
 	if m := passwordLine.FindSubmatch(l.readLog(offset)); m != nil {
 		l.printf("\n  用户名：admin\n  密码：  %s（只显示这一次，可以用 haobot-agent passwd 修改）\n", m[1])
@@ -134,7 +134,7 @@ func (l Launcher) Stop() error {
 	pid, ok := l.running()
 	if !ok {
 		os.Remove(l.path(pidFile))
-		l.printf("号小助没有在后台运行。\n")
+		l.printf("SIMs Manager没有在后台运行。\n")
 		return nil
 	}
 	if err := terminate(pid); err != nil {
@@ -143,7 +143,7 @@ func (l Launcher) Stop() error {
 	for end := time.Now().Add(15 * time.Second); time.Now().Before(end); time.Sleep(200 * time.Millisecond) {
 		if !groupAlive(pid) {
 			os.Remove(l.path(pidFile))
-			l.printf("号小助已停止。\n")
+			l.printf("SIMs Manager已停止。\n")
 			return nil
 		}
 	}
@@ -157,10 +157,10 @@ var ErrNotRunning = errors.New("not running")
 func (l Launcher) Status() error {
 	pid, ok := l.running()
 	if !ok {
-		l.printf("号小助没有在后台运行。启动：haobot-agent start\n")
+		l.printf("SIMs Manager没有在后台运行。启动：haobot-agent start\n")
 		return ErrNotRunning
 	}
-	l.printf("号小助正在运行（进程 %d）。\n", pid)
+	l.printf("SIMs Manager正在运行（进程 %d）。\n", pid)
 	l.where(l.savedArgs())
 	l.printf("  日志：%s\n", l.path(logFile))
 	return nil

@@ -263,7 +263,7 @@ func (s *Server) exportContacts(w http.ResponseWriter, r *http.Request) {
 		cards = append(cards, card)
 	}
 	w.Header().Set("Content-Type", "text/vcard; charset=utf-8")
-	attachment(w, "号小助联系人-"+time.Now().Format("20060102")+".vcf")
+	attachment(w, "SIMs Manager联系人-"+time.Now().Format("20060102")+".vcf")
 	phonebook.WriteVCards(w, cards)
 }
 

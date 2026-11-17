@@ -1,4 +1,4 @@
-# haobot (号小助)
+# haobot (SIMs Manager)
 
 [中文](README.md)
 

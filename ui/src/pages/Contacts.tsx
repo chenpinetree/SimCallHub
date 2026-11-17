@@ -237,7 +237,7 @@ function Yellow({ q, pages, onSave, onEdit }: { q: string; pages: UseQueryResult
           <a href={pages.data.source.split("@")[0]} target="_blank" rel="noreferrer" className="underline hover:text-muted">
             metowolf/vCards
           </a>
-          （MIT 许可），随号小助版本更新；你的修改单独保存，不会被更新覆盖。
+          （MIT 许可），随SIMs Manager版本更新；你的修改单独保存，不会被更新覆盖。
         </p>
       )}
       <ConfirmModal
@@ -298,7 +298,7 @@ function ImportModal({ kind, text, onClose }: { kind: Tab; text: string; onClose
       description={
         kind === "mine"
           ? "支持 iPhone、安卓和 Google 通讯录导出的 vCard（.vcf）文件。一个人有多个号码时，会按号码分成多个联系人。"
-          : "导入号小助导出的黄页文件：文件里的机构会改成文件里的样子，文件里没有的机构保持不变。"
+          : "导入SIMs Manager导出的黄页文件：文件里的机构会改成文件里的样子，文件里没有的机构保持不变。"
       }
       footer={
         <>
@@ -311,7 +311,7 @@ function ImportModal({ kind, text, onClose }: { kind: Tab; text: string; onClose
         </>
       }
     >
-      <p className="text-sm">{count ? `文件里有 ${count} 个${kind === "mine" ? "联系人" : "机构"}。` : kind === "mine" ? "文件里没有找到联系人，请选择 .vcf 文件。" : "这不是号小助导出的黄页文件。"}</p>
+      <p className="text-sm">{count ? `文件里有 ${count} 个${kind === "mine" ? "联系人" : "机构"}。` : kind === "mine" ? "文件里没有找到联系人，请选择 .vcf 文件。" : "这不是SIMs Manager导出的黄页文件。"}</p>
       {kind === "mine" && count > 0 && <Switch checked={overwrite} onChange={setOverwrite} label="号码已在通讯录里时，用文件里的名字、备注和头像覆盖" />}
       {error && <p className="text-sm text-bad">{error}</p>}
     </Modal>

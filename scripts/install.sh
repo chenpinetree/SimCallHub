@@ -1,5 +1,5 @@
 #!/bin/sh
-# Installs or upgrades 号小助 (haobot) on Linux or macOS: downloads the
+# Installs or upgrades SIMs Manager (haobot) on Linux or macOS: downloads the
 # release for this computer, checks it against SHA256SUMS and puts
 # haobot-agent on the PATH. Nothing is set to start with the computer; the
 # agent runs when you say "haobot-agent start".
@@ -51,7 +51,7 @@ base=${mirror}https://github.com/$repo/releases/download/$version
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 
-say "下载号小助 ${version}（$os-${arch}）…"
+say "下载SIMs Manager ${version}（$os-${arch}）…"
 curl -fL --progress-bar -o "$tmp/$name.tar.gz" "$base/$name.tar.gz" || fail "下载失败：$base/$name.tar.gz"
 curl -fsSL -o "$tmp/SHA256SUMS" "$base/SHA256SUMS" || fail "下载校验文件失败"
 (
@@ -126,7 +126,7 @@ fi
 say ""
 if [ -n "$was_running" ]; then
 	"$dst" start
-elif ask "现在启动号小助吗？[Y/n]" y; then
+elif ask "现在启动SIMs Manager吗？[Y/n]" y; then
 	if ask "允许局域网里的其他电脑、手机打开管理后台吗？（NAS、树莓派选 y）[y/N]" n; then
 		"$dst" start -lan
 	else

@@ -258,7 +258,7 @@ function CommandBar({ status, issues, brief }: { status: Status; issues: Issue[]
   const online = devices.filter((d) => d.online && d.connected);
   const bad = issues.some((i) => i.tone === "bad");
   const tone: Tone = online.length === 0 || bad ? "bad" : issues.length ? "warn" : "ok";
-  const headline = online.length === 0 ? "等待连接模组" : bad ? "有设备需要你处理" : issues.length ? `运行中，${issues.length} 项提醒` : "号小助正在守护";
+  const headline = online.length === 0 ? "等待连接模组" : bad ? "有设备需要你处理" : issues.length ? `运行中，${issues.length} 项提醒` : "SIMs Manager正在守护";
   const lastSync = online.map((d) => d.lastSync).filter(Boolean).sort().pop() ?? null;
   const channels = activeChannels(notify);
   const modules: { label: string; on: boolean | undefined; detail: string; to: string; icon: LucideIcon }[] = [
