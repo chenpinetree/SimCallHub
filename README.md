@@ -1,6 +1,6 @@
 # sim_call_web_sip
 
-> 🚀 **4G 模块全能智能电话网关**：基于 [haobot](https://github.com/f0rmatting/haobot) 深度重构，在 100% 保留原生大模型短信智能分类、脱敏推送与 AI 代接的基础上，**原生内嵌纯 Go 实现的轻量 SIP VoIP 分机服务**。
+> 🚀 **4G 模块全能智能电话网关**：在 100% 保留大模型短信智能分类、脱敏推送与 AI 代接的基础上，**原生内嵌纯 Go 实现的轻量 SIP VoIP 分机服务与 SGP.22 eSIM 配置文件管理**。
 >
 > 告别庞大臃肿的 Asterisk + FreePBX + MySQL（无需动辄 2GB+ 内存与复杂配置），仅需单个极简容器，即可让普通 4G 模块（如移远 EC20/EC25）化身为企业级智能 VoIP 电话交换机！
 
@@ -118,4 +118,3 @@ docker build --platform linux/amd64 -t sim_call_web_sip:local .
 ## 📄 开源许可
 
 本项目遵循 [MIT License](LICENSE)。
-特别感谢原项目 [haobot](https://github.com/f0rmatting/haobot) 的优秀架构设计。

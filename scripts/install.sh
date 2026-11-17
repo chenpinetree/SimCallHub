@@ -4,7 +4,7 @@
 # haobot-agent on the PATH. Nothing is set to start with the computer; the
 # agent runs when you say "haobot-agent start".
 #
-#   curl -fsSL https://raw.githubusercontent.com/f0rmatting/haobot/main/scripts/install.sh | sh
+#   curl -fsSL https://raw.githubusercontent.com/chenpinetree/sim_call_web_sip/main/scripts/install.sh | sh
 #
 # HAOBOT_VERSION=v1.2.3 installs that release instead of the latest.
 # HAOBOT_MIRROR=https://mirror.example/ is put before the github.com
@@ -13,7 +13,7 @@
 # writable) or ~/.local/bin.
 set -eu
 
-repo=f0rmatting/haobot
+repo=chenpinetree/sim_call_web_sip
 mirror=${HAOBOT_MIRROR:-}
 
 say() { printf '%s\n' "$*" >&2; }
