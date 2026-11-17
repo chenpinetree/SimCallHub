@@ -17,14 +17,14 @@ import (
 // Config configures the embedded SIP PBX extension server.
 type Config struct {
 	Enabled      bool   `json:"enabled"`
-	ListenAddr   string `json:"listen"`        // e.g. "0.0.0.0:5060"
-	PublicIP     string `json:"public_ip"`     // IP reported in SDP (defaults to local LAN IP)
-	Domain       string `json:"domain"`        // SIP domain/realm (default "SimCallHub")
-	Username     string `json:"username"`      // Default extension username (e.g. "1001")
-	Password     string `json:"password"`      // Extension password
-	RTPPortStart int    `json:"rtp_start"`     // Starting RTP port (e.g. 20000)
-	RTPPortEnd   int    `json:"rtp_end"`       // Ending RTP port (e.g. 20100)
-	RingTimeout  int    `json:"ring_timeout"`  // Seconds to ring extensions before letting AI answer (default 20)
+	ListenAddr   string `json:"listen"`       // e.g. "0.0.0.0:5060"
+	PublicIP     string `json:"public_ip"`    // IP reported in SDP (defaults to local LAN IP)
+	Domain       string `json:"domain"`       // SIP domain/realm (default "SimCallHub")
+	Username     string `json:"username"`     // Default extension username (e.g. "1001")
+	Password     string `json:"password"`     // Extension password
+	RTPPortStart int    `json:"rtp_start"`    // Starting RTP port (e.g. 20000)
+	RTPPortEnd   int    `json:"rtp_end"`      // Ending RTP port (e.g. 20100)
+	RingTimeout  int    `json:"ring_timeout"` // Seconds to ring extensions before letting AI answer (default 20)
 }
 
 // DefaultConfig returns recommended SIP server settings.

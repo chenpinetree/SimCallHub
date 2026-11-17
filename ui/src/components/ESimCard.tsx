@@ -1,8 +1,8 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Cpu, CheckCircle2, CircleOff, RefreshCw, Pencil, Trash2, AlertCircle } from "lucide-react";
+import { Cpu, CheckCircle2, CircleOff, RefreshCw, Pencil, Trash2 } from "lucide-react";
 import { api, type DeviceStatus } from "../lib/api";
-import { Button, Card, CardBody, CardHeader, Badge, Spinner, ConfirmModal, Input, useToast } from "./ui";
+import { Button, Card, CardBody, CardHeader, Badge, Spinner, ConfirmModal, Modal, Input, useToast } from "./ui";
 
 export interface ESimProfile {
   iccid: string;
@@ -42,7 +42,7 @@ export function ESimCard({ d }: { d: DeviceStatus }) {
       return api.post(`/api/devices/${d.id}/esim/${action}`, { iccid });
     },
     onSuccess: (_, vars) => {
-      toast.success(vars.action === "enable" ? "已发送启用并切换指令，模组正在重新搜网..." : "操作成功");
+      toast.ok(vars.action === "enable" ? "已发送启用并切换指令，模组正在重新搜网..." : "操作成功");
       queryClient.invalidateQueries({ queryKey: ["esim", d.id] });
       setConfirmAction(null);
       setRenameICCID(null);
@@ -146,11 +146,11 @@ export function ESimCard({ d }: { d: DeviceStatus }) {
                         {p.nickname || p.name || p.provider || "未命名配置"}
                       </span>
                       {isEnabled ? (
-                        <Badge tone="success" className="flex items-center gap-1">
+                        <Badge tone="ok" className="flex items-center gap-1">
                           <CheckCircle2 className="h-3 w-3" /> 当前启用
                         </Badge>
                       ) : (
-                        <Badge tone="neutral" className="flex items-center gap-1">
+                        <Badge tone="muted" className="flex items-center gap-1">
                           <CircleOff className="h-3 w-3" /> 未激活
                         </Badge>
                       )}
@@ -233,32 +233,45 @@ export function ESimCard({ d }: { d: DeviceStatus }) {
             ? "确认停用此 eSIM 配置？"
             : "确认永久删除此配置？"
         }
+        description={
+          confirmAction === "enable"
+            ? "切换后模组将软重启并使用新的卡号重新搜网注册网络。"
+            : confirmAction === "disable"
+            ? "停用后该卡槽将处于无 SIM 卡状态。"
+            : "删除后此 eSIM 配置文件无法恢复，需重新向运营商申请二维码。"
+        }
         loading={mutation.isPending}
         danger={confirmAction === "delete"}
-      >
-        <p className="text-sm text-muted">
-          {confirmAction === "enable" && "切换后模组将软重启并使用新的卡号重新搜网注册网络。"}
-          {confirmAction === "disable" && "停用后该卡槽将处于无 SIM 卡状态。"}
-          {confirmAction === "delete" && "删除后此 eSIM 配置文件无法恢复，需重新向运营商申请二维码。"}
-        </p>
-      </ConfirmModal>
+      />
 
       {/* 重命名弹窗 */}
       {renameICCID && (
-        <ConfirmModal
+        <Modal
           open={true}
           onClose={() => setRenameICCID(null)}
-          onConfirm={() => {
-            mutation.mutate({ action: "nickname", iccid: renameICCID, nickname: newNick });
-          }}
           title="修改配置文件备注名称"
-          loading={mutation.isPending}
+          footer={
+            <div className="flex justify-end gap-2">
+              <Button variant="secondary" onClick={() => setRenameICCID(null)}>
+                取消
+              </Button>
+              <Button
+                variant="primary"
+                loading={mutation.isPending}
+                onClick={() => {
+                  mutation.mutate({ action: "nickname", iccid: renameICCID, nickname: newNick });
+                }}
+              >
+                保存
+              </Button>
+            </div>
+          }
         >
-          <div className="space-y-2">
+          <div className="space-y-2 py-2">
             <label className="text-xs text-muted">新备注名称</label>
             <Input value={newNick} onChange={(e) => setNewNick(e.target.value)} placeholder="如: 备用联通卡" />
           </div>
-        </ConfirmModal>
+        </Modal>
       )}
     </div>
   );
