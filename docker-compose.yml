@@ -1,22 +1,17 @@
+version: '3.8'
+
 services:
   simcallhub:
-    build:
-      context: .
     image: simcallhub:local
     container_name: simcallhub
     restart: unless-stopped
     privileged: true
+    # 强烈建议 host 模式：避免 Docker NAT 转换影响 SIP 媒体流与动态 RTP 端口
+    network_mode: host
     devices:
       - /dev/bus/usb:/dev/bus/usb
     volumes:
       - ./data:/data
-    ports:
-      # Web 管理后台端口
-      - "9081:9081"
-      # SIP VoIP 分机注册与信令端口 (UDP)
-      - "5060:5060/udp"
-      # RTP 通话音频媒体流端口范围 (UDP)
-      - "20000-20100:20000-20100/udp"
     environment:
       - TZ=Asia/Shanghai
       - HAOBOT_DATA=/data
