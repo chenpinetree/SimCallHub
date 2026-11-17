@@ -39,7 +39,7 @@ It is a single Go binary for macOS and Linux (including NAS boxes) with an embed
 Plug in the modem, then on Linux or macOS run:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/f0rmatting/haobot/main/scripts/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/chenpinetree/sim_call_web_sip/main/scripts/install.sh | sh
 ```
 
 The script picks the release for your system and CPU, checks its SHA256, puts `haobot-agent` in `/usr/local/bin` (or `~/.local/bin` when that is not writable) and offers to start it. Answer `y` to LAN access on a headless NAS or Raspberry Pi. It then prints the admin UI address and the first password for the user `admin`. The certificate is self-signed: accept it in the browser.
