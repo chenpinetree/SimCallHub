@@ -17,7 +17,7 @@ GOOS=${GOOS:-$(go env GOOS)}
 GOARCH=${GOARCH:-$(go env GOARCH)}
 arch=$GOARCH
 [ "$GOARCH" = arm ] && arch=armv${GOARM:-7}
-name=haobot-agent-$VERSION-$GOOS-$arch
+name=simcallhub-$VERSION-$GOOS-$arch
 out=dist/$name
 rm -rf "$out" && mkdir -p "$out"
 
@@ -25,7 +25,7 @@ ldflags="-s -w -X main.version=$VERSION"
 case $GOOS in
 linux)
 	CGO_ENABLED=0 GOOS=linux GOARCH=$GOARCH GOARM=${GOARM:-} \
-		go build -trimpath -ldflags "$ldflags" -o "$out/haobot-agent" ./cmd/haobot-agent
+		go build -trimpath -ldflags "$ldflags" -o "$out/simcallhub" ./cmd/simcallhub
 	;;
 darwin)
 	if [ "$GOARCH" != "$(go env GOHOSTARCH)" ] || [ "$(go env GOHOSTOS)" != darwin ]; then
@@ -47,8 +47,8 @@ PC
 	# -a: cgo results are cached without the pkg-config flags, which differ
 	# from a normal build's.
 	CGO_ENABLED=1 PKG_CONFIG_PATH=$pc \
-		go build -a -trimpath -ldflags "$ldflags" -o "$out/haobot-agent" ./cmd/haobot-agent
-	if otool -L "$out/haobot-agent" | grep -q libusb; then
+		go build -a -trimpath -ldflags "$ldflags" -o "$out/simcallhub" ./cmd/simcallhub
+	if otool -L "$out/simcallhub" | grep -q libusb; then
 		echo "libusb is still linked dynamically" >&2
 		exit 1
 	fi

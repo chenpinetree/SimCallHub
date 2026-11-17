@@ -1,13 +1,13 @@
 # 参与贡献
 
-感谢你愿意改进SIMs Manager！
+感谢你愿意改进SimCallHub！
 
 ## 报告问题
 
 模组相关的问题，跟型号、固件和运营商关系很大。提 Issue 时请附上：
 
-- `haobot-agent version` 的输出，操作系统和 CPU 架构
-- 模组型号和固件版本：服务停止时运行 `haobot-agent at ATI 'AT+QGMR'`
+- `simcallhub version` 的输出，操作系统和 CPU 架构
+- 模组型号和固件版本：服务停止时运行 `simcallhub at ATI 'AT+QGMR'`
 - 运营商，以及是否开通了 VoLTE
 - “日志”页里相关的记录（请先删掉手机号、短信内容等个人信息）
 

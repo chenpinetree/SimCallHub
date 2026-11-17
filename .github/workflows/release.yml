@@ -77,27 +77,27 @@ jobs:
           cat > notes.md <<NOTES
           ## 安装或升级
 
-          Linux 和 macOS 都是一行命令，会自动选择系统和架构、校验文件，把 \`haobot-agent\` 放进 PATH，并问你要不要现在启动：
+          Linux 和 macOS 都是一行命令，会自动选择系统和架构、校验文件，把 \`simcallhub\` 放进 PATH，并问你要不要现在启动：
 
           \`\`\`sh
           curl -fsSL https://raw.githubusercontent.com/${{ github.repository }}/main/scripts/install.sh | sh
           \`\`\`
 
-          之后用 \`haobot-agent start\`（加 \`-lan\` 允许局域网访问）、\`haobot-agent stop\`、\`haobot-agent status\` 启停。已经装过的再执行一次就是升级，正在运行的会自动重启，设置和数据都保留。
+          之后用 \`simcallhub start\`（加 \`-lan\` 允许局域网访问）、\`simcallhub stop\`、\`simcallhub status\` 启停。已经装过的再执行一次就是升级，正在运行的会自动重启，设置和数据都保留。
 
           ## 手动下载
 
           | 系统 | 文件 |
           |---|---|
-          | Linux x86_64（大多数 NAS、PC、服务器） | \`haobot-agent-$VERSION-linux-amd64.tar.gz\` |
-          | Linux ARM64（树莓派 4/5 64 位系统、ARM NAS） | \`haobot-agent-$VERSION-linux-arm64.tar.gz\` |
-          | Linux ARMv7（树莓派 32 位系统、老款 ARM 设备） | \`haobot-agent-$VERSION-linux-armv7.tar.gz\` |
-          | macOS Apple 芯片（M 系列） | \`haobot-agent-$VERSION-darwin-arm64.tar.gz\` |
-          | macOS Intel | \`haobot-agent-$VERSION-darwin-amd64.tar.gz\` |
+          | Linux x86_64（大多数 NAS、PC、服务器） | \`simcallhub-$VERSION-linux-amd64.tar.gz\` |
+          | Linux ARM64（树莓派 4/5 64 位系统、ARM NAS） | \`simcallhub-$VERSION-linux-arm64.tar.gz\` |
+          | Linux ARMv7（树莓派 32 位系统、老款 ARM 设备） | \`simcallhub-$VERSION-linux-armv7.tar.gz\` |
+          | macOS Apple 芯片（M 系列） | \`simcallhub-$VERSION-darwin-arm64.tar.gz\` |
+          | macOS Intel | \`simcallhub-$VERSION-darwin-amd64.tar.gz\` |
 
-          不确定选哪个：运行 \`uname -m\`，\`x86_64\` 选 amd64，\`aarch64\`/\`arm64\` 选 arm64，\`armv7l\` 选 armv7。解压后运行 \`./haobot-agent start\`。
+          不确定选哪个：运行 \`uname -m\`，\`x86_64\` 选 amd64，\`aarch64\`/\`arm64\` 选 arm64，\`armv7l\` 选 armv7。解压后运行 \`./simcallhub start\`。
 
-          - macOS 版已内置 libusb，不需要 Homebrew。程序没有经过苹果签名，用浏览器下载的要先执行 \`xattr -d com.apple.quarantine haobot-agent\`，否则系统会拦截（用上面的安装命令不需要）。
+          - macOS 版已内置 libusb，不需要 Homebrew。程序没有经过苹果签名，用浏览器下载的要先执行 \`xattr -d com.apple.quarantine simcallhub\`，否则系统会拦截（用上面的安装命令不需要）。
           - 用 \`SHA256SUMS\` 校验下载的文件：\`sha256sum -c SHA256SUMS --ignore-missing\`。
           NOTES
       - name: Publish

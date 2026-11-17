@@ -1,10 +1,10 @@
-# haobot (SIMs Manager)
+# simcallhub (SIMs Manager)
 
 [中文](README.md)
 
-![haobot: your phone number, now with an assistant](docs/images/promo-hero.jpg)
+![simcallhub: your phone number, now with an assistant](docs/images/promo-hero.jpg)
 
-haobot watches the phone number in a cellular modem (Quectel EC20; other Quectel and SIMCom modules are recognised but untested) plugged into a computer you keep running. It:
+simcallhub watches the phone number in a cellular modem (Quectel EC20; other Quectel and SIMCom modules are recognised but untested) plugged into a computer you keep running. It:
 
 - receives SMS and sorts them with an LLM (verification codes, bills, deliveries, marketing, spam, carrier, notices, personal). Messages are redacted locally before they are sent to the model;
 - lets an AI answer calls you miss. It asks who is calling and why, then saves a summary. It uses Alibaba Cloud Bailian (Model Studio) realtime speech models;
@@ -42,28 +42,28 @@ Plug in the modem, then on Linux or macOS run:
 curl -fsSL https://raw.githubusercontent.com/chenpinetree/SimCallHub/main/scripts/install.sh | sh
 ```
 
-The script picks the release for your system and CPU, checks its SHA256, puts `haobot-agent` in `/usr/local/bin` (or `~/.local/bin` when that is not writable) and offers to start it. Answer `y` to LAN access on a headless NAS or Raspberry Pi. It then prints the admin UI address and the first password for the user `admin`. The certificate is self-signed: accept it in the browser.
+The script picks the release for your system and CPU, checks its SHA256, puts `simcallhub` in `/usr/local/bin` (or `~/.local/bin` when that is not writable) and offers to start it. Answer `y` to LAN access on a headless NAS or Raspberry Pi. It then prints the admin UI address and the first password for the user `admin`. The certificate is self-signed: accept it in the browser.
 
 Then, in 设置 (Settings), configure classification (智能分类), push channels (消息推送) and AI answering (AI 接听). Each section has a test button.
 
 The agent runs in the background and keeps running when you close the terminal. Nothing is set to start with the computer:
 
 ```sh
-haobot-agent start        # start; -lan allows LAN access. Options are remembered for the next start
-haobot-agent status       # running? where is the admin UI? (exit code 3 when stopped)
-haobot-agent stop         # stop
+simcallhub start        # start; -lan allows LAN access. Options are remembered for the next start
+simcallhub status       # running? where is the admin UI? (exit code 3 when stopped)
+simcallhub stop         # stop
 ```
 
 - **Upgrade**: run the install command again. A running agent is stopped, replaced and started again with its options.
-- **Slow GitHub**: `HAOBOT_VERSION=v1.2.3` picks a release; `HAOBOT_MIRROR` prefixes GitHub download links. Or download a release by hand and run `./haobot-agent start`.
-- **Linux permissions**: as a normal user you need the `dialout` group (`uucp` on Arch) for the modem's serial ports. `haobot-agent udev-rules` prints udev rules that keep ModemManager off the modems and let `plugdev` reset them when they hang.
-- **Uninstall**: `haobot-agent stop` and delete the program. Data is in `~/.haobot`.
+- **Slow GitHub**: `SIMCALLHUB_VERSION=v1.2.3` picks a release; `SIMCALLHUB_MIRROR` prefixes GitHub download links. Or download a release by hand and run `./simcallhub start`.
+- **Linux permissions**: as a normal user you need the `dialout` group (`uucp` on Arch) for the modem's serial ports. `simcallhub udev-rules` prints udev rules that keep ModemManager off the modems and let `plugdev` reset them when they hang.
+- **Uninstall**: `simcallhub stop` and delete the program. Data is in `~/.simcallhub`.
 
 Building from source:
 
 ```sh
 brew install libusb pkg-config   # macOS only
-make build                       # bin/haobot-agent
+make build                       # bin/simcallhub
 make linux                       # static Linux amd64/arm64 binaries (serial transport)
 ```
 
@@ -71,11 +71,11 @@ Other commands:
 
 | Command | What it does |
 |---|---|
-| `haobot-agent serve` | Run in the foreground (Ctrl+C stops it) |
-| `haobot-agent passwd` | Change the admin password |
-| `haobot-agent backup` / `restore` | Move your data to another machine |
-| `haobot-agent at 'ATI'` | Send raw AT commands while the service is stopped |
-| `haobot-agent version` | Print the version |
+| `simcallhub serve` | Run in the foreground (Ctrl+C stops it) |
+| `simcallhub passwd` | Change the admin password |
+| `simcallhub backup` / `restore` | Move your data to another machine |
+| `simcallhub at 'ATI'` | Send raw AT commands while the service is stopped |
+| `simcallhub version` | Print the version |
 
 See [README.md](README.md) for the full documentation: flags, health checks, calls, AI answering, push rules, HTTPS and security.
 

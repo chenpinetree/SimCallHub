@@ -51,7 +51,7 @@ export function Login({ onLogin }: { onLogin: () => void }) {
           <p className="flex items-start gap-2 text-xs leading-relaxed text-muted">
             <ShieldCheck className="mt-0.5 size-3.5 shrink-0 text-ok" />
             <span>
-              首次启动时的随机密码打印在终端或日志里。忘记密码可在服务器上执行 <code className="font-mono text-fg">haobot-agent passwd</code> 重置。
+              首次启动时的随机密码打印在终端或日志里。忘记密码可在服务器上执行 <code className="font-mono text-fg">simcallhub passwd</code> 重置。
             </span>
           </p>
         </form>
