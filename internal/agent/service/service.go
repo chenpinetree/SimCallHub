@@ -17,11 +17,11 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/chenpinetree/sim_call_web_sip/internal/agent/mms"
-	"github.com/chenpinetree/sim_call_web_sip/internal/agent/modem"
-	"github.com/chenpinetree/sim_call_web_sip/internal/agent/pdu"
-	"github.com/chenpinetree/sim_call_web_sip/internal/agent/store"
-	"github.com/chenpinetree/sim_call_web_sip/internal/agent/transport"
+	"github.com/chenpinetree/SimCallHub/internal/agent/mms"
+	"github.com/chenpinetree/SimCallHub/internal/agent/modem"
+	"github.com/chenpinetree/SimCallHub/internal/agent/pdu"
+	"github.com/chenpinetree/SimCallHub/internal/agent/store"
+	"github.com/chenpinetree/SimCallHub/internal/agent/transport"
 )
 
 const (

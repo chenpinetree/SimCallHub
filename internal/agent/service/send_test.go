@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/chenpinetree/sim_call_web_sip/internal/agent/store"
+	"github.com/chenpinetree/SimCallHub/internal/agent/store"
 )
 
 // sendingModem is a ready modem with an empty inbox that accepts AT+CMGS.

@@ -15,13 +15,13 @@ import (
 	"strings"
 	"time"
 
-	"github.com/chenpinetree/sim_call_web_sip/internal/agent/assistant"
-	"github.com/chenpinetree/sim_call_web_sip/internal/agent/classify"
-	"github.com/chenpinetree/sim_call_web_sip/internal/agent/notify"
-	"github.com/chenpinetree/sim_call_web_sip/internal/agent/phonebook"
-	"github.com/chenpinetree/sim_call_web_sip/internal/agent/service"
-	"github.com/chenpinetree/sim_call_web_sip/internal/agent/settings"
-	"github.com/chenpinetree/sim_call_web_sip/internal/agent/store"
+	"github.com/chenpinetree/SimCallHub/internal/agent/assistant"
+	"github.com/chenpinetree/SimCallHub/internal/agent/classify"
+	"github.com/chenpinetree/SimCallHub/internal/agent/notify"
+	"github.com/chenpinetree/SimCallHub/internal/agent/phonebook"
+	"github.com/chenpinetree/SimCallHub/internal/agent/service"
+	"github.com/chenpinetree/SimCallHub/internal/agent/settings"
+	"github.com/chenpinetree/SimCallHub/internal/agent/store"
 )
 
 //go:embed all:dist

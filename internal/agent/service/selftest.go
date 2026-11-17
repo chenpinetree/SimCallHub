@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/chenpinetree/sim_call_web_sip/internal/agent/store"
+	"github.com/chenpinetree/SimCallHub/internal/agent/store"
 )
 
 // selfTestTimeout is how long a test message may take to come back.

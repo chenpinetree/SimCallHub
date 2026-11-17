@@ -8,9 +8,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/chenpinetree/sim_call_web_sip/internal/agent/modem"
-	"github.com/chenpinetree/sim_call_web_sip/internal/agent/service"
-	"github.com/chenpinetree/sim_call_web_sip/internal/agent/store"
+	"github.com/chenpinetree/SimCallHub/internal/agent/modem"
+	"github.com/chenpinetree/SimCallHub/internal/agent/service"
+	"github.com/chenpinetree/SimCallHub/internal/agent/store"
 )
 
 // statusJSON is the dashboard and device page payload.

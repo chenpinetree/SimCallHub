@@ -9,11 +9,11 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/chenpinetree/sim_call_web_sip/internal/agent/assistant"
-	"github.com/chenpinetree/sim_call_web_sip/internal/agent/classify"
-	"github.com/chenpinetree/sim_call_web_sip/internal/agent/notify"
-	"github.com/chenpinetree/sim_call_web_sip/internal/agent/secret"
-	"github.com/chenpinetree/sim_call_web_sip/internal/agent/store"
+	"github.com/chenpinetree/SimCallHub/internal/agent/assistant"
+	"github.com/chenpinetree/SimCallHub/internal/agent/classify"
+	"github.com/chenpinetree/SimCallHub/internal/agent/notify"
+	"github.com/chenpinetree/SimCallHub/internal/agent/secret"
+	"github.com/chenpinetree/SimCallHub/internal/agent/store"
 )
 
 const (

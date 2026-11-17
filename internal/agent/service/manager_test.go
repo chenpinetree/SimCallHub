@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/chenpinetree/sim_call_web_sip/internal/agent/store"
-	"github.com/chenpinetree/sim_call_web_sip/internal/agent/transport"
+	"github.com/chenpinetree/SimCallHub/internal/agent/store"
+	"github.com/chenpinetree/SimCallHub/internal/agent/transport"
 )
 
 func managerWith(t *testing.T, ids ...string) (*Manager, *store.Store) {

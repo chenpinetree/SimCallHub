@@ -8,7 +8,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/chenpinetree/sim_call_web_sip/internal/agent/service"
+	"github.com/chenpinetree/SimCallHub/internal/agent/service"
 )
 
 // CallDirection indicates who initiated the call.

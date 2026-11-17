@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/chenpinetree/sim_call_web_sip/internal/agent/modem"
+	"github.com/chenpinetree/SimCallHub/internal/agent/modem"
 )
 
 // Profile represents an installed eSIM/eUICC profile.

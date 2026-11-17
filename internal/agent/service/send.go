@@ -5,8 +5,8 @@ import (
 	"errors"
 	"time"
 
-	"github.com/chenpinetree/sim_call_web_sip/internal/agent/modem"
-	"github.com/chenpinetree/sim_call_web_sip/internal/agent/store"
+	"github.com/chenpinetree/SimCallHub/internal/agent/modem"
+	"github.com/chenpinetree/SimCallHub/internal/agent/store"
 )
 
 // sendTimeout bounds one send, including waiting for the modem to be free.

@@ -8,9 +8,9 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/chenpinetree/sim_call_web_sip/internal/agent/classify"
-	"github.com/chenpinetree/sim_call_web_sip/internal/agent/service"
-	"github.com/chenpinetree/sim_call_web_sip/internal/agent/store"
+	"github.com/chenpinetree/SimCallHub/internal/agent/classify"
+	"github.com/chenpinetree/SimCallHub/internal/agent/service"
+	"github.com/chenpinetree/SimCallHub/internal/agent/store"
 )
 
 // Span is a piece of a Note's meta line; Code marks a number or code that

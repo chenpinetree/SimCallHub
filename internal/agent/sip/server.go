@@ -11,7 +11,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/chenpinetree/sim_call_web_sip/internal/agent/service"
+	"github.com/chenpinetree/SimCallHub/internal/agent/service"
 )
 
 // Config configures the embedded SIP PBX extension server.
@@ -19,7 +19,7 @@ type Config struct {
 	Enabled      bool   `json:"enabled"`
 	ListenAddr   string `json:"listen"`        // e.g. "0.0.0.0:5060"
 	PublicIP     string `json:"public_ip"`     // IP reported in SDP (defaults to local LAN IP)
-	Domain       string `json:"domain"`        // SIP domain/realm (default "sim_call_web_sip")
+	Domain       string `json:"domain"`        // SIP domain/realm (default "SimCallHub")
 	Username     string `json:"username"`      // Default extension username (e.g. "1001")
 	Password     string `json:"password"`      // Extension password
 	RTPPortStart int    `json:"rtp_start"`     // Starting RTP port (e.g. 20000)
@@ -32,7 +32,7 @@ func DefaultConfig() Config {
 	return Config{
 		Enabled:      true,
 		ListenAddr:   "0.0.0.0:5060",
-		Domain:       "sim_call_web_sip",
+		Domain:       "SimCallHub",
 		Username:     "1001",
 		Password:     "12345678",
 		RTPPortStart: 20000,
@@ -62,7 +62,7 @@ type Server struct {
 // NewServer creates a new SIP server instance.
 func NewServer(cfg Config, devices *service.Manager, log *slog.Logger) *Server {
 	if cfg.Domain == "" {
-		cfg.Domain = "sim_call_web_sip"
+		cfg.Domain = "SimCallHub"
 	}
 	if cfg.RTPPortStart <= 0 {
 		cfg.RTPPortStart = 20000

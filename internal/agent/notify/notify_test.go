@@ -14,8 +14,8 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/chenpinetree/sim_call_web_sip/internal/agent/service"
-	"github.com/chenpinetree/sim_call_web_sip/internal/agent/store"
+	"github.com/chenpinetree/SimCallHub/internal/agent/service"
+	"github.com/chenpinetree/SimCallHub/internal/agent/store"
 )
 
 const testToken = "123456789:AAEabcdefghijklmnopqrstuvwxyz012345"

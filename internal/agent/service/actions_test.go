@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/chenpinetree/sim_call_web_sip/internal/agent/modem"
+	"github.com/chenpinetree/SimCallHub/internal/agent/modem"
 )
 
 // scripted answers each command with a fixed reply and records what it got.

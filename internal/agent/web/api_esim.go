@@ -5,8 +5,8 @@ import (
 	"encoding/json"
 	"net/http"
 
-	"github.com/chenpinetree/sim_call_web_sip/internal/agent/esim"
-	"github.com/chenpinetree/sim_call_web_sip/internal/agent/modem"
+	"github.com/chenpinetree/SimCallHub/internal/agent/esim"
+	"github.com/chenpinetree/SimCallHub/internal/agent/modem"
 )
 
 var esimManager = esim.NewManager()
