@@ -35,16 +35,16 @@ func newLauncher(args []string) (launcher.Launcher, error) {
 // runStart runs serve in the background. -lan is short for -listen 0.0.0.0.
 func runStart(args []string) error {
 	if len(args) > 0 && (args[0] == "-h" || args[0] == "--help") {
-		fmt.Fprint(os.Stderr, `用法: haobot-agent start [serve 的参数]
+		fmt.Fprint(os.Stderr, `用法: simcallhub start [serve 的参数]
 
 在后台启动SIMs Manager，关掉终端也会继续运行，并显示管理后台地址和首次登录密码。
 参数和 serve 相同，另外 -lan 等于 -listen 0.0.0.0（允许局域网访问）。
 参数会被记住：以后不带参数运行 start，沿用上一次的参数。
 
-  haobot-agent start           启动（只能在本机打开管理后台）
-  haobot-agent start -lan      启动，允许局域网里的电脑、手机打开
-  haobot-agent status          查看是否在运行
-  haobot-agent stop            停止
+  simcallhub start           启动（只能在本机打开管理后台）
+  simcallhub start -lan      启动，允许局域网里的电脑、手机打开
+  simcallhub status          查看是否在运行
+  simcallhub stop            停止
 
 日志在数据目录的 haobot.log。用了 -data 的话，stop 和 status 也要带上同样的 -data。
 `)

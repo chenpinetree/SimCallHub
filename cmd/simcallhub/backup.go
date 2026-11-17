@@ -93,7 +93,7 @@ func runBackup(args []string) error {
 	}
 	fi, _ := os.Stat(*out)
 	fmt.Printf("已备份 %d 个文件到 %s（%.1f MB）\n", files, *out, float64(fi.Size())/1e6)
-	fmt.Println("备份里有加密密钥和通话录音，请妥善保管。在新机器上用 haobot-agent restore 恢复。")
+	fmt.Println("备份里有加密密钥和通话录音，请妥善保管。在新机器上用 simcallhub restore 恢复。")
 	return nil
 }
 
@@ -135,7 +135,7 @@ func runRestore(args []string) error {
 	dataDir := registerDataDir(flags)
 	force := flags.Bool("force", false, "数据目录里已有数据库时仍然恢复（原数据库改名保留）")
 	flags.Usage = func() {
-		fmt.Fprintln(os.Stderr, "用法: haobot-agent restore [-data 目录] [-force] 备份文件.tar.gz\n先停止 haobot-agent 再恢复。")
+		fmt.Fprintln(os.Stderr, "用法: simcallhub restore [-data 目录] [-force] 备份文件.tar.gz\n先停止 simcallhub 再恢复。")
 		flags.PrintDefaults()
 	}
 	flags.Parse(args)
@@ -240,7 +240,7 @@ func runRestore(args []string) error {
 	if err != nil {
 		return err
 	}
-	fmt.Printf("已恢复 %d 个文件到 %s，现在可以启动 haobot-agent。\n", files, *dataDir)
+	fmt.Printf("已恢复 %d 个文件到 %s，现在可以启动 simcallhub。\n", files, *dataDir)
 	return nil
 }
 

@@ -66,7 +66,7 @@ func (l Launcher) printf(format string, a ...any) { fmt.Fprintf(l.Out, format, a
 func (l Launcher) Start(args []string) error {
 	args = withoutFlag(args, "data")
 	if pid, ok := l.running(); ok {
-		l.printf("SIMs Manager已经在运行（进程 %d）。\n", pid)
+		l.printf("SimCallHub已经在运行（进程 %d）。\n", pid)
 		l.where(l.savedArgs())
 		return nil
 	}
@@ -86,7 +86,7 @@ func (l Launcher) Start(args []string) error {
 	}
 	defer log.Close()
 	offset, _ := log.Seek(0, io.SeekEnd)
-	fmt.Fprintf(log, "\n---- %s haobot-agent %s\n", time.Now().Format(time.DateTime), strings.Join(serve, " "))
+	fmt.Fprintf(log, "\n---- %s simcallhub %s\n", time.Now().Format(time.DateTime), strings.Join(serve, " "))
 	cmd := exec.Command(l.Self, serve...)
 	cmd.Stdout, cmd.Stderr = log, log
 	detach(cmd)
@@ -105,7 +105,7 @@ func (l Launcher) Start(args []string) error {
 		select {
 		case err := <-exited:
 			os.Remove(l.path(pidFile))
-			l.printf("SIMs Manager没能启动（%v），最后的日志：\n\n%s\n", err, tail(l.readLog(offset), 15))
+			l.printf("SimCallHub没能启动（%v），最后的日志：\n\n%s\n", err, tail(l.readLog(offset), 15))
 			return errors.New("启动失败")
 		default:
 		}
@@ -113,19 +113,19 @@ func (l Launcher) Start(args []string) error {
 			break
 		}
 		if time.Now().After(end) {
-			l.printf("SIMs Manager已在后台启动（进程 %d），但 30 秒内还没开始监听端口 %d，请看日志：%s\n", pid, port, l.path(logFile))
+			l.printf("SimCallHub已在后台启动（进程 %d），但 30 秒内还没开始监听端口 %d，请看日志：%s\n", pid, port, l.path(logFile))
 			return nil
 		}
 	}
-	l.printf("✅ SIMs Manager已在后台运行（进程 %d）。\n", pid)
+	l.printf("✅ SimCallHub已在后台运行（进程 %d）。\n", pid)
 	l.where(args)
 	if m := passwordLine.FindSubmatch(l.readLog(offset)); m != nil {
-		l.printf("\n  用户名：admin\n  密码：  %s（只显示这一次，可以用 haobot-agent passwd 修改）\n", m[1])
+		l.printf("\n  用户名：admin\n  密码：  %s（只显示这一次，可以用 simcallhub passwd 修改）\n", m[1])
 		if l.https(args) {
 			l.printf("\n  第一次打开会提示证书不受信任（自签名证书），点“高级 → 继续访问”即可。\n")
 		}
 	}
-	l.printf("  日志：%s\n  停止：haobot-agent stop\n", l.path(logFile))
+	l.printf("  日志：%s\n  停止：simcallhub stop\n", l.path(logFile))
 	return nil
 }
 
@@ -134,7 +134,7 @@ func (l Launcher) Stop() error {
 	pid, ok := l.running()
 	if !ok {
 		os.Remove(l.path(pidFile))
-		l.printf("SIMs Manager没有在后台运行。\n")
+		l.printf("SimCallHub没有在后台运行。\n")
 		return nil
 	}
 	if err := terminate(pid); err != nil {
@@ -143,7 +143,7 @@ func (l Launcher) Stop() error {
 	for end := time.Now().Add(15 * time.Second); time.Now().Before(end); time.Sleep(200 * time.Millisecond) {
 		if !groupAlive(pid) {
 			os.Remove(l.path(pidFile))
-			l.printf("SIMs Manager已停止。\n")
+			l.printf("SimCallHub已停止。\n")
 			return nil
 		}
 	}
@@ -157,10 +157,10 @@ var ErrNotRunning = errors.New("not running")
 func (l Launcher) Status() error {
 	pid, ok := l.running()
 	if !ok {
-		l.printf("SIMs Manager没有在后台运行。启动：haobot-agent start\n")
+		l.printf("SimCallHub没有在后台运行。启动：simcallhub start\n")
 		return ErrNotRunning
 	}
-	l.printf("SIMs Manager正在运行（进程 %d）。\n", pid)
+	l.printf("SimCallHub正在运行（进程 %d）。\n", pid)
 	l.where(l.savedArgs())
 	l.printf("  日志：%s\n", l.path(logFile))
 	return nil
@@ -178,7 +178,7 @@ func (l Launcher) running() (int, bool) {
 	}
 	// A stale pid file may name an unrelated process that got the number.
 	out, err := exec.Command("ps", "-p", strconv.Itoa(pid), "-o", "command=").Output()
-	if err == nil && !strings.Contains(string(out), "haobot-agent") {
+	if err == nil && !strings.Contains(string(out), "simcallhub") {
 		return 0, false
 	}
 	return pid, true
@@ -236,7 +236,7 @@ func (l Launcher) where(args []string) {
 	}
 	l.printf("\n  管理后台：%s127.0.0.1:%s\n", scheme, p)
 	if host == "127.0.0.1" || host == "localhost" || host == "::1" {
-		l.printf("  （只能在这台机器上打开；局域网访问：haobot-agent stop，再 haobot-agent start -lan）\n")
+		l.printf("  （只能在这台机器上打开；局域网访问：simcallhub stop，再 simcallhub start -lan）\n")
 		return
 	}
 	addrs, _ := net.InterfaceAddrs()

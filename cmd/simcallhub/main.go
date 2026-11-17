@@ -1,4 +1,4 @@
-// Command haobot-agent (SIMs Manager) receives SMS from a cellular modem (Quectel EC20 and
+// Command simcallhub (SIMs Manager) receives SMS from a cellular modem (Quectel EC20 and
 // similar), stores and classifies them in a local SQLite database, and serves
 // a password-protected admin UI for messages and the device.
 package main
@@ -46,19 +46,19 @@ import (
 )
 
 const usage = `用法:
-  haobot-agent [serve] [参数]       接收短信并启动 Web（默认）
-  haobot-agent passwd [参数]        设置 Web 登录密码
-  haobot-agent at [参数] <AT指令>…  直接发送 AT 指令（调试用）
-  haobot-agent purge-binary [参数]  从数据库删除已保存的二进制短信（彩信通知除外）
-  haobot-agent backup [参数]        备份数据库、密钥和通话录音（运行中也可以备份）
-  haobot-agent restore [参数] 文件  在新机器上恢复备份（先停止 Agent）
-  haobot-agent start [参数]         在后台启动（参数同 serve，会被记住；-lan 允许局域网访问）
-  haobot-agent stop                 停止后台运行的SIMs Manager
-  haobot-agent status               查看是否在运行、管理后台地址
-  haobot-agent udev-rules           输出 Linux 的 udev 规则（模组权限、避开 ModemManager）
-  haobot-agent version              显示版本
+  simcallhub [serve] [参数]       接收短信并启动 Web（默认）
+  simcallhub passwd [参数]        设置 Web 登录密码
+  simcallhub at [参数] <AT指令>…  直接发送 AT 指令（调试用）
+  simcallhub purge-binary [参数]  从数据库删除已保存的二进制短信（彩信通知除外）
+  simcallhub backup [参数]        备份数据库、密钥和通话录音（运行中也可以备份）
+  simcallhub restore [参数] 文件  在新机器上恢复备份（先停止 Agent）
+  simcallhub start [参数]         在后台启动（参数同 serve，会被记住；-lan 允许局域网访问）
+  simcallhub stop                 停止后台运行的SIMs Manager
+  simcallhub status               查看是否在运行、管理后台地址
+  simcallhub udev-rules           输出 Linux 的 udev 规则（模组权限、避开 ModemManager）
+  simcallhub version              显示版本
 
-运行 "haobot-agent <命令> -h" 查看参数。
+运行 "simcallhub <命令> -h" 查看参数。
 `
 
 func main() {
@@ -93,7 +93,7 @@ func main() {
 	case "udev-rules":
 		err = runUdevRules()
 	case "version":
-		fmt.Println("haobot-agent", buildVersion())
+		fmt.Println("simcallhub", buildVersion())
 	case "help":
 		fmt.Print(usage)
 	default:
@@ -444,7 +444,7 @@ func runServe(args []string) error {
 		}
 		ports = strings.Join(names, ", ")
 	}
-	log.Info("haobot-agent started", "version", buildVersion(), "web", scheme+"://"+addr, "data", *dataDir, "modems", ports)
+	log.Info("simcallhub started", "version", buildVersion(), "web", scheme+"://"+addr, "data", *dataDir, "modems", ports)
 	devices.Note(ctx, "info", "SIMs Manager已启动")
 
 	select {
@@ -559,7 +559,7 @@ func ensurePassword(ctx context.Context, st *store.Store) error {
 	if err := web.SetPassword(ctx, st, password); err != nil {
 		return err
 	}
-	fmt.Fprintf(os.Stderr, "\n首次启动，已生成 Web 登录密码：%s\n可用 \"haobot-agent passwd\" 修改。此密码只显示这一次。\n\n", password)
+	fmt.Fprintf(os.Stderr, "\n首次启动，已生成 Web 登录密码：%s\n可用 \"simcallhub passwd\" 修改。此密码只显示这一次。\n\n", password)
 	return nil
 }
 
@@ -658,7 +658,7 @@ func runAT(args []string) error {
 	timeout := fs.Duration("timeout", 10*time.Second, "每条指令的超时")
 	fs.Parse(args)
 	if fs.NArg() == 0 {
-		return errors.New("请提供至少一条 AT 指令，例如 haobot-agent at 'AT+CSQ'")
+		return errors.New("请提供至少一条 AT 指令，例如 simcallhub at 'AT+CSQ'")
 	}
 	cfg, err := conn.one()
 	if err != nil {

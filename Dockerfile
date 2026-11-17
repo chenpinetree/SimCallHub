@@ -13,7 +13,7 @@ RUN apt-get update \
 
 WORKDIR /src
 COPY . .
-RUN go build -trimpath -ldflags "-s -w" -o /out/haobot-agent ./cmd/haobot-agent
+RUN go build -trimpath -ldflags "-s -w" -o /out/simcallhub ./cmd/simcallhub
 
 # ---------- 运行阶段 ----------
 FROM --platform=linux/amd64 debian:bookworm-slim
@@ -22,7 +22,8 @@ RUN apt-get update \
  && apt-get install -y --no-install-recommends libusb-1.0-0 ca-certificates tzdata usbutils \
  && rm -rf /var/lib/apt/lists/*
 
-COPY --from=build /out/haobot-agent /usr/local/bin/haobot-agent
+COPY --from=build /out/simcallhub /usr/local/bin/simcallhub
+RUN ln -sf /usr/local/bin/simcallhub /usr/local/bin/haobot-agent
 
 ENV TZ=Asia/Shanghai \
     HAOBOT_DATA=/data \
@@ -38,5 +39,5 @@ VOLUME ["/data"]
 # 20000-20100/udp: RTP 语音媒体流
 EXPOSE 9081 5060/udp 20000-20100/udp
 
-ENTRYPOINT ["haobot-agent"]
+ENTRYPOINT ["simcallhub"]
 CMD ["serve", "-listen", "0.0.0.0", "-transport", "usb"]

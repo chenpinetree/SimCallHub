@@ -2,7 +2,7 @@ BIN := bin
 # Release builds name their version; others report the git commit.
 VERSION ?=
 LDFLAGS := $(if $(VERSION),-ldflags "-X main.version=$(VERSION)")
-AGENT := ./cmd/haobot-agent
+AGENT := ./cmd/simcallhub
 
 .PHONY: build linux dist test vet clean ui ui-dev yellowpages
 
@@ -25,12 +25,12 @@ yellowpages:
 
 # Native build. On macOS this includes the libusb transport (brew install libusb pkg-config).
 build:
-	go build $(LDFLAGS) -o $(BIN)/haobot-agent $(AGENT)
+	go build $(LDFLAGS) -o $(BIN)/simcallhub $(AGENT)
 
 # Static Linux binaries without cgo; they use the serial transport (/dev/ttyUSB*).
 linux:
-	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build $(LDFLAGS) -o $(BIN)/haobot-agent-linux-amd64 $(AGENT)
-	CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build $(LDFLAGS) -o $(BIN)/haobot-agent-linux-arm64 $(AGENT)
+	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build $(LDFLAGS) -o $(BIN)/simcallhub-linux-amd64 $(AGENT)
+	CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build $(LDFLAGS) -o $(BIN)/simcallhub-linux-arm64 $(AGENT)
 
 # Release archives in dist/: the Linux ones, plus macOS for this Mac's
 # architecture. Tagging v* on GitHub builds every platform (release.yml).

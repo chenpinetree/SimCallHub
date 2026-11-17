@@ -64,11 +64,11 @@ func TestUdevRulesCoverModels(t *testing.T) {
 	}
 }
 
-// fakeAgent is a shell script named haobot-agent that, like serve, prints
+// fakeAgent is a shell script named simcallhub that, like serve, prints
 // the first password and listens on the port in $FAKE_PORT until stopped.
 func fakeAgent(t *testing.T) string {
 	t.Helper()
-	path := filepath.Join(t.TempDir(), "haobot-agent")
+	path := filepath.Join(t.TempDir(), "simcallhub")
 	script := `#!/bin/sh
 echo "首次启动，已生成 Web 登录密码：Pw-123" >&2
 echo "args: $*"
@@ -153,7 +153,7 @@ func TestStartStatusStop(t *testing.T) {
 }
 
 func TestStartReportsFailure(t *testing.T) {
-	bad := filepath.Join(t.TempDir(), "haobot-agent")
+	bad := filepath.Join(t.TempDir(), "simcallhub")
 	os.WriteFile(bad, []byte("#!/bin/sh\necho '错误: 打不开数据库' >&2\nexit 1\n"), 0o755)
 	var out bytes.Buffer
 	l := Launcher{Self: bad, Data: t.TempDir(), Listen: "127.0.0.1", Port: freePort(t), Out: &out}

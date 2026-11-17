@@ -102,7 +102,7 @@ services:
       - "20000-20100:20000-20100/udp"
     environment:
       - TZ=Asia/Shanghai
-      - HAOBOT_DATA=/data
+      - SIMCALLHUB_DATA=/data
       - SIM_SIP_USER=1001          # SIP 分机号
       - SIM_SIP_PASS=12345678      # SIP 分机登录密码
       - SIM_SIP_LISTEN=0.0.0.0:5060
@@ -148,7 +148,7 @@ docker logs -f simcallhub
 | `-sip-rtp-start` | `20000` | RTP 通话媒体流起始端口 |
 | `-sip-rtp-end` | `20100` | RTP 通话媒体流结束端口 |
 | `-sip-timeout` | `20` | 分机振铃超时秒数（超时后自动切入 AI 接听） |
-| `HAOBOT_DATA` / `-data` | `/data` | 数据库、录音及密钥存储目录 |
+| `SIMCALLHUB_DATA` / `-data` | `/data` | 数据库、录音及密钥存储目录 |
 
 ---
 

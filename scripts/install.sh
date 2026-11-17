@@ -1,20 +1,20 @@
 #!/bin/sh
-# Installs or upgrades SIMs Manager (haobot) on Linux or macOS: downloads the
+# Installs or upgrades SimCallHub on Linux or macOS: downloads the
 # release for this computer, checks it against SHA256SUMS and puts
-# haobot-agent on the PATH. Nothing is set to start with the computer; the
-# agent runs when you say "haobot-agent start".
+# simcallhub on the PATH. Nothing is set to start with the computer; the
+# agent runs when you say "simcallhub start".
 #
 #   curl -fsSL https://raw.githubusercontent.com/chenpinetree/SimCallHub/main/scripts/install.sh | sh
 #
-# HAOBOT_VERSION=v1.2.3 installs that release instead of the latest.
-# HAOBOT_MIRROR=https://mirror.example/ is put before the github.com
+# SIMCALLHUB_VERSION=v1.2.3 installs that release instead of the latest.
+# SIMCALLHUB_MIRROR=https://mirror.example/ is put before the github.com
 # download links, for networks where GitHub is slow.
-# HAOBOT_BIN=/some/dir installs there instead of /usr/local/bin (when
+# SIMCALLHUB_BIN=/some/dir installs there instead of /usr/local/bin (when
 # writable) or ~/.local/bin.
 set -eu
 
 repo=chenpinetree/SimCallHub
-mirror=${HAOBOT_MIRROR:-}
+mirror=${SIMCALLHUB_MIRROR:-${HAOBOT_MIRROR:-}}
 
 say() { printf '%s\n' "$*" >&2; }
 fail() {
@@ -36,22 +36,22 @@ esac
 command -v curl >/dev/null || fail "需要 curl"
 command -v tar >/dev/null || fail "需要 tar"
 
-version=${HAOBOT_VERSION:-}
+version=${SIMCALLHUB_VERSION:-${HAOBOT_VERSION:-}}
 if [ -z "$version" ]; then
 	# The latest release page redirects to its tag.
 	version=$(curl -fsSLI -o /dev/null -w '%{url_effective}' "https://github.com/$repo/releases/latest" | sed 's#.*/tag/##')
 	case $version in
 	v*) ;;
-	*) fail "查不到最新版本（网络连不上 GitHub？），可以用 HAOBOT_VERSION=v1.2.3 指定版本" ;;
+	*) fail "查不到最新版本（网络连不上 GitHub？），可以用 SIMCALLHUB_VERSION=v1.2.3 指定版本" ;;
 	esac
 fi
 
-name=haobot-agent-$version-$os-$arch
+name=simcallhub-$version-$os-$arch
 base=${mirror}https://github.com/$repo/releases/download/$version
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 
-say "下载SIMs Manager ${version}（$os-${arch}）…"
+say "下载 SimCallHub ${version}（$os-${arch}）…"
 curl -fL --progress-bar -o "$tmp/$name.tar.gz" "$base/$name.tar.gz" || fail "下载失败：$base/$name.tar.gz"
 curl -fsSL -o "$tmp/SHA256SUMS" "$base/SHA256SUMS" || fail "下载校验文件失败"
 (
@@ -64,10 +64,10 @@ curl -fsSL -o "$tmp/SHA256SUMS" "$base/SHA256SUMS" || fail "下载校验文件�
 	fi
 ) || fail "校验失败，下载的文件不完整或被改动过"
 tar -xzf "$tmp/$name.tar.gz" -C "$tmp"
-agent=$tmp/$name/haobot-agent
+agent=$tmp/$name/simcallhub
 
 # Where to put it: a directory already on the PATH when we may write there.
-dir=${HAOBOT_BIN:-}
+dir=${SIMCALLHUB_BIN:-${HAOBOT_BIN:-}}
 if [ -z "$dir" ]; then
 	if [ -w /usr/local/bin ]; then
 		dir=/usr/local/bin
@@ -76,7 +76,7 @@ if [ -z "$dir" ]; then
 	fi
 fi
 mkdir -p "$dir"
-dst=$dir/haobot-agent
+dst=$dir/simcallhub
 
 # An agent running in the background is stopped for the upgrade and started
 # again with the options it remembers.
@@ -106,11 +106,11 @@ ask() { # ask "question" default(y|n)
 }
 
 case ":$PATH:" in
-*":$dir:"*) cmd=haobot-agent ;;
+*":$dir:"*) cmd=simcallhub ;;
 *)
 	cmd=$dst
 	say ""
-	say "提示：$dir 不在 PATH 里。把下面这行加到 ~/.profile（zsh 是 ~/.zshrc）后重新打开终端，就能直接用 haobot-agent："
+	say "提示：$dir 不在 PATH 里。把下面这行加到 ~/.profile（zsh 是 ~/.zshrc）后重新打开终端，就能直接用 simcallhub："
 	say "  export PATH=\"$dir:\$PATH\""
 	;;
 esac
@@ -120,13 +120,13 @@ if [ "$os" = linux ] && [ "$(id -u)" != 0 ] && ! id -nG | grep -qwE 'dialout|uuc
 	say "提示：当前用户没有读写模组串口的权限。执行下面的命令后注销再登录（或重启）："
 	say "  sudo usermod -aG $(getent group uucp >/dev/null 2>&1 && ! getent group dialout >/dev/null 2>&1 && echo uucp || echo dialout) $USER"
 	say "模组被 ModemManager 占用、或者想让卡死时自动复位模组，再装上 udev 规则："
-	say "  $cmd udev-rules | sudo tee /etc/udev/rules.d/99-haobot.rules && sudo udevadm control --reload && sudo udevadm trigger"
+	say "  $cmd udev-rules | sudo tee /etc/udev/rules.d/99-simcallhub.rules && sudo udevadm control --reload && sudo udevadm trigger"
 fi
 
 say ""
 if [ -n "$was_running" ]; then
 	"$dst" start
-elif ask "现在启动SIMs Manager吗？[Y/n]" y; then
+elif ask "现在启动 SimCallHub 吗？[Y/n]" y; then
 	if ask "允许局域网里的其他电脑、手机打开管理后台吗？（NAS、树莓派选 y）[y/N]" n; then
 		"$dst" start -lan
 	else
