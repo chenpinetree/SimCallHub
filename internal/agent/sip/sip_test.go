@@ -116,10 +116,15 @@ func TestRegistrarAuth(t *testing.T) {
 
 	// Test registration
 	addr := &net.UDPAddr{IP: net.ParseIP("192.168.1.50"), Port: 5060}
-	reg.Register("1001", "<sip:1001@192.168.1.50:5060>", addr, 3600, "call-1")
+	reg.Register("1001", "<sip:1001@192.168.1.50:5060>", addr, 3600, "call-1", "Linphone/5.2.0")
 
 	active := reg.GetActiveExtensions()
 	if len(active) != 1 || active[0].Username != "1001" {
 		t.Fatalf("expected 1 active extension, got %d", len(active))
+	}
+
+	clients := reg.ListActive()
+	if len(clients) != 1 || clients[0].UserAgent != "Linphone/5.2.0" {
+		t.Fatalf("expected 1 active client with user agent, got %+v", clients)
 	}
 }

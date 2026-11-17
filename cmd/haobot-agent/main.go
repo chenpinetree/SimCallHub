@@ -8,6 +8,7 @@ import (
 	"cmp"
 	"context"
 	"crypto/tls"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -378,6 +379,26 @@ func runServe(args []string) error {
 		},
 	}, conn.fixed(), conn.base.Kind, st, log)
 
+	// Restore saved SIP config from store if present
+	if saved, err := st.Setting(ctx, "sip_config"); err == nil && saved != "" {
+		var sCfg struct {
+			Username    string `json:"username"`
+			Password    string `json:"password"`
+			RingTimeout int    `json:"ring_timeout"`
+		}
+		if err := json.Unmarshal([]byte(saved), &sCfg); err == nil {
+			if sCfg.Username != "" {
+				sipCfg.Username = sCfg.Username
+			}
+			if sCfg.Password != "" {
+				sipCfg.Password = sCfg.Password
+			}
+			if sCfg.RingTimeout > 0 {
+				sipCfg.RingTimeout = sCfg.RingTimeout
+			}
+		}
+	}
+
 	sipSrv = sip.NewServer(sipCfg, devices, log)
 	if *sipEnable {
 		go func() {
@@ -394,7 +415,7 @@ func runServe(args []string) error {
 	notifier.Note = devices.Note
 	srv, err := web.New(web.Deps{
 		Store: st, Devices: devices, Settings: conf, Worker: worker, Client: client, Assistant: aide,
-		RecordingDir: recordings, Notifier: notifier, Phonebook: book,
+		RecordingDir: recordings, Notifier: notifier, Phonebook: book, SIP: sipSrv,
 		Log: log, SecureCookie: *secureCookie || *useTLS,
 	})
 	if err != nil {

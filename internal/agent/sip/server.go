@@ -86,6 +86,48 @@ func NewServer(cfg Config, devices *service.Manager, log *slog.Logger) *Server {
 	}
 }
 
+// ServerStatus describes the runtime state of the SIP server.
+type ServerStatus struct {
+	Enabled     bool           `json:"enabled"`
+	ListenAddr  string         `json:"listen_addr"`
+	Domain      string         `json:"domain"`
+	Username    string         `json:"username"`
+	Password    string         `json:"password"`
+	RingTimeout int            `json:"ring_timeout"`
+	Clients     []ClientStatus `json:"clients"`
+}
+
+// Status returns current server configuration and connected extensions.
+func (s *Server) Status() ServerStatus {
+	s.sessMu.Lock()
+	cfg := s.cfg
+	s.sessMu.Unlock()
+
+	return ServerStatus{
+		Enabled:     cfg.Enabled,
+		ListenAddr:  cfg.ListenAddr,
+		Domain:      cfg.Domain,
+		Username:    cfg.Username,
+		Password:    cfg.Password,
+		RingTimeout: cfg.RingTimeout,
+		Clients:     s.registrar.ListActive(),
+	}
+}
+
+// UpdateConfig updates the username, password and ring timeout dynamically.
+func (s *Server) UpdateConfig(username, password string, ringTimeout int) {
+	s.sessMu.Lock()
+	oldUser := s.cfg.Username
+	s.cfg.Username = username
+	s.cfg.Password = password
+	if ringTimeout > 0 {
+		s.cfg.RingTimeout = ringTimeout
+	}
+	s.sessMu.Unlock()
+
+	s.registrar.UpdateAccount(oldUser, username, password)
+}
+
 // Start begins listening on the SIP UDP socket and dispatches incoming messages.
 func (s *Server) Start(ctx context.Context) error {
 	if !s.cfg.Enabled {
@@ -278,9 +320,10 @@ func (s *Server) handleRegister(req *SIPMessage, from *net.UDPAddr) {
 	contact := req.GetHeader("Contact")
 	expires := ParseExpires(req)
 	callID := req.GetHeader("Call-ID")
+	userAgent := req.GetHeader("User-Agent")
 
-	s.registrar.Register(username, contact, from, expires, callID)
-	s.log.Info("sip extension registered", "extension", username, "client", from.String(), "expires", expires)
+	s.registrar.Register(username, contact, from, expires, callID, userAgent)
+	s.log.Info("sip extension registered", "extension", username, "client", from.String(), "user_agent", userAgent, "expires", expires)
 
 	resp := &SIPMessage{
 		IsResponse:   true,
