@@ -13,11 +13,13 @@ import (
 
 // Extension represents a registered SIP client.
 type Extension struct {
-	Username  string
-	Contact   string
-	Addr      *net.UDPAddr
-	ExpiresAt time.Time
-	CallID    string
+	Username     string
+	Contact      string
+	Addr         *net.UDPAddr
+	ExpiresAt    time.Time
+	CallID       string
+	UserAgent    string
+	RegisteredAt time.Time
 }
 
 // Registrar manages extension credentials and live SIP registrations.
@@ -115,7 +117,7 @@ func (r *Registrar) Authenticate(msg *SIPMessage) (string, bool) {
 }
 
 // Register adds or updates a registered extension.
-func (r *Registrar) Register(username, contact string, addr *net.UDPAddr, expiresSec int, callID string) {
+func (r *Registrar) Register(username, contact string, addr *net.UDPAddr, expiresSec int, callID, userAgent string) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -124,13 +126,68 @@ func (r *Registrar) Register(username, contact string, addr *net.UDPAddr, expire
 		return
 	}
 
-	r.active[username] = &Extension{
-		Username:  username,
-		Contact:   contact,
-		Addr:      addr,
-		ExpiresAt: time.Now().Add(time.Duration(expiresSec) * time.Second),
-		CallID:    callID,
+	if userAgent == "" {
+		userAgent = "SIP Phone"
 	}
+
+	r.active[username] = &Extension{
+		Username:     username,
+		Contact:      contact,
+		Addr:         addr,
+		ExpiresAt:    time.Now().Add(time.Duration(expiresSec) * time.Second),
+		CallID:       callID,
+		UserAgent:    userAgent,
+		RegisteredAt: time.Now(),
+	}
+}
+
+// ClientStatus reports an online SIP client's details.
+type ClientStatus struct {
+	Username     string `json:"username"`
+	Contact      string `json:"contact"`
+	Addr         string `json:"addr"`
+	UserAgent    string `json:"user_agent"`
+	ExpiresAt    string `json:"expires_at"`
+	ExpiresInSec int    `json:"expires_in_sec"`
+	RegisteredAt string `json:"registered_at"`
+}
+
+// ListActive returns all online extensions with metadata.
+func (r *Registrar) ListActive() []ClientStatus {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	now := time.Now()
+	var list []ClientStatus
+	for u, ext := range r.active {
+		if now.After(ext.ExpiresAt) {
+			delete(r.active, u)
+			continue
+		}
+		rem := int(ext.ExpiresAt.Sub(now).Seconds())
+		list = append(list, ClientStatus{
+			Username:     ext.Username,
+			Contact:      ext.Contact,
+			Addr:         ext.Addr.String(),
+			UserAgent:    ext.UserAgent,
+			ExpiresAt:    ext.ExpiresAt.Format(time.RFC3339),
+			ExpiresInSec: rem,
+			RegisteredAt: ext.RegisteredAt.Format(time.RFC3339),
+		})
+	}
+	return list
+}
+
+// UpdateAccount modifies or adds account credentials.
+func (r *Registrar) UpdateAccount(oldUser, newUser, newPassword string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if oldUser != "" && oldUser != newUser {
+		delete(r.extensions, oldUser)
+		delete(r.active, oldUser)
+	}
+	r.extensions[newUser] = newPassword
 }
 
 // GetActiveExtensions returns all currently online and valid extensions.

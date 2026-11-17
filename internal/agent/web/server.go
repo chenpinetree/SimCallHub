@@ -21,6 +21,7 @@ import (
 	"github.com/chenpinetree/SimCallHub/internal/agent/phonebook"
 	"github.com/chenpinetree/SimCallHub/internal/agent/service"
 	"github.com/chenpinetree/SimCallHub/internal/agent/settings"
+	"github.com/chenpinetree/SimCallHub/internal/agent/sip"
 	"github.com/chenpinetree/SimCallHub/internal/agent/store"
 )
 
@@ -55,7 +56,9 @@ type Deps struct {
 	Phonebook *phonebook.Book
 	// RecordingDir holds call recordings.
 	RecordingDir string
-	Log          *slog.Logger
+	// SIP is the embedded SIP VoIP extension PBX server.
+	SIP *sip.Server
+	Log *slog.Logger
 	// SecureCookie marks the session cookie Secure (HTTPS reverse proxy).
 	SecureCookie bool
 }
@@ -143,6 +146,8 @@ func (s *Server) Handler() http.Handler {
 	authed("POST /api/settings/classifier/test", s.testClassifier)
 	authed("POST /api/settings/classifier/preview", s.previewClassifier)
 	authed("POST /api/settings/classifier/reclassify", s.reclassifyAll)
+	authed("GET /api/settings/sip", s.getSIP)
+	authed("PUT /api/settings/sip", s.putSIP)
 
 	s.routeCalls(authed)
 	s.routeAssistant(authed)

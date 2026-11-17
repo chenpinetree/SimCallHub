@@ -472,3 +472,24 @@ export interface ImportResult {
   updated: number;
   skipped: number;
 }
+
+export interface SipClient {
+  username: string;
+  contact: string;
+  addr: string;
+  user_agent: string;
+  expires_at: string;
+  expires_in_sec: number;
+  registered_at: string;
+}
+
+export interface SipSettings {
+  enabled: boolean;
+  listen_addr: string;
+  domain: string;
+  username: string;
+  password: string;
+  ring_timeout: number;
+  clients: SipClient[];
+}
+

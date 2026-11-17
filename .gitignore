@@ -22,3 +22,4 @@ haobot-backup-*.tar.gz
 .idea/
 .vscode/
 *.swp
+*.tar
