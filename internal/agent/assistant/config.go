@@ -16,16 +16,20 @@ import (
 
 // Defaults for a configuration that was never saved.
 const (
-	DefaultModel    = "qwen3.8-omni-flash-realtime"
-	DefaultVoice    = "Tina"
-	DefaultGreeting = "喂，您好，请问是哪位呀？"
-	defaultDelay    = 10
-	defaultMaxSec   = 180
-	defaultRate     = 1.1
-	defaultDaily    = 20
-	defaultPerPeer  = 3
-	defaultTurns    = 12
-	defaultKeepDays = 90
+	DefaultModel          = "qwen3.8-omni-flash-realtime"
+	DefaultVoice          = "Tina"
+	DoubaoDefaultModel    = "doubao-seeduplex-3.0"
+	DoubaoModelVersion    = "1.2.6.1"
+	DoubaoDefaultVoice    = "zh_female_vv_jupiter_bigtts"
+	DoubaoDefaultEndpoint = "wss://openspeech.bytedance.com/api/v3/duplex/realtime/dialogue"
+	DefaultGreeting       = "喂，您好，请问是哪位呀？"
+	defaultDelay          = 10
+	defaultMaxSec         = 180
+	defaultRate           = 1.1
+	defaultDaily          = 20
+	defaultPerPeer        = 3
+	defaultTurns          = 12
+	defaultKeepDays       = 90
 )
 
 // Config is the assistant setup edited in the admin UI. The API key and the
@@ -75,7 +79,22 @@ type Config struct {
 }
 
 // Models lists the realtime speech models offered in the UI.
-var Models = []string{"qwen3.8-omni-flash-realtime", "qwen3.5-omni-plus-realtime", "qwen3.5-omni-flash-realtime", "qwen3-omni-flash-realtime"}
+var Models = []string{
+	"doubao-seeduplex-3.0",
+	"qwen3.8-omni-flash-realtime",
+	"qwen3.5-omni-plus-realtime",
+	"qwen3.5-omni-flash-realtime",
+	"qwen3-omni-flash-realtime",
+}
+
+// IsDoubao reports whether the model or URL points to ByteDance Volcano Engine Doubao.
+func (c Config) IsDoubao() bool {
+	m := strings.ToLower(c.Model)
+	u := strings.ToLower(c.URL)
+	return strings.Contains(m, "doubao") || strings.Contains(m, "seeduplex") ||
+		strings.Contains(u, "bytedance.com") || strings.Contains(u, "volces.com") ||
+		strings.Contains(u, "volcengine.com")
+}
 
 // Key returns the API key to use: the assistant's own, else the classifier's.
 func (c Config) Key(llm classify.Config) string {
@@ -132,8 +151,14 @@ func (c *Config) Normalize() {
 	if c.Model == "" {
 		c.Model = d.Model
 	}
-	if c.Voice == "" {
-		c.Voice = d.Voice
+	if c.IsDoubao() {
+		if c.Voice == "" || c.Voice == DefaultVoice {
+			c.Voice = DoubaoDefaultVoice
+		}
+	} else {
+		if c.Voice == "" || c.Voice == DoubaoDefaultVoice {
+			c.Voice = d.Voice
+		}
 	}
 	if c.MaxDurationSec == 0 {
 		c.MaxDurationSec = d.MaxDurationSec
@@ -196,8 +221,8 @@ func (c Config) Validate() error {
 	}
 	// Speech synthesis, recognition and translation models share the
 	// realtime endpoint but cannot hold a conversation.
-	if !strings.Contains(c.Model, "omni") || !strings.Contains(c.Model, "realtime") {
-		return fmt.Errorf("%s 不是实时对话模型。请选择 Omni Realtime 系列，例如 %s（语音合成 TTS、语音识别 ASR、同传 LiveTranslate 模型不能接电话）", c.Model, DefaultModel)
+	if !c.IsDoubao() && (!strings.Contains(c.Model, "omni") || !strings.Contains(c.Model, "realtime")) {
+		return fmt.Errorf("%s 不是实时对话模型。请选择 Qwen Omni Realtime 系列或豆包 Seeduplex 系列，例如 %s（语音合成 TTS、语音识别 ASR、同传 LiveTranslate 模型不能接电话）", c.Model, DefaultModel)
 	}
 	if c.URL != "" {
 		if strings.Contains(c.URL, "{") {
@@ -218,23 +243,30 @@ func (c Config) RingDelay() time.Duration { return time.Duration(c.RingDelaySec)
 // an explicit URL it uses the host of the classifier's OpenAI-compatible
 // Base URL, e.g. https://ws-xxx.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1
 // becomes wss://ws-xxx.ap-southeast-1.maas.aliyuncs.com/api-ws/v1/realtime.
+// For Doubao, it defaults to DoubaoDefaultEndpoint.
 func (c Config) Endpoint(llm classify.Config) (string, error) {
 	raw := c.URL
 	if raw == "" {
-		base, err := url.Parse(llm.BaseURL)
-		if err != nil || base.Host == "" || llm.Provider != classify.ProviderOpenAI {
-			return "", errors.New("请先在“短信分类”里填写百炼的 Base URL（OpenAI 兼容接口），或在这里填写实时接口地址")
+		if c.IsDoubao() {
+			raw = DoubaoDefaultEndpoint
+		} else {
+			base, err := url.Parse(llm.BaseURL)
+			if err != nil || base.Host == "" || llm.Provider != classify.ProviderOpenAI {
+				return "", errors.New("请先在“短信分类”里填写百炼的 Base URL（OpenAI 兼容接口），或在这里填写实时接口地址")
+			}
+			raw = "wss://" + base.Host + "/api-ws/v1/realtime"
 		}
-		raw = "wss://" + base.Host + "/api-ws/v1/realtime"
 	}
 	u, err := url.Parse(raw)
 	if err != nil {
 		return "", err
 	}
-	q := u.Query()
-	if q.Get("model") == "" {
-		q.Set("model", c.Model)
-		u.RawQuery = q.Encode()
+	if !c.IsDoubao() {
+		q := u.Query()
+		if q.Get("model") == "" {
+			q.Set("model", c.Model)
+			u.RawQuery = q.Encode()
+		}
 	}
 	return u.String(), nil
 }

@@ -164,6 +164,18 @@ var endCallTool = map[string]any{
 	},
 }
 
+var doubaoEndCallTool = map[string]any{
+	"type":        "function",
+	"name":        "end_call",
+	"description": "道别之后挂断电话。只有在已经和对方道别之后才调用。",
+	"parameters": map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"reason": map[string]any{"type": "string", "description": "结束通话的原因，例如：已问清来意、推销电话、对方挂断"},
+		},
+	},
+}
+
 // audioFormat is the PCM sample rates of a session.
 type audioFormat struct{ in, out int }
 
@@ -177,6 +189,19 @@ func (f audioFormat) String() string { return fmt.Sprintf("输入 %d Hz / 输出
 // configure sets the session up with the first format the server takes and
 // returns the rates it confirmed.
 func configure(ctx context.Context, c *conn, events <-chan serverEvent, cfg Config, prompt string) (audioFormat, error) {
+	if cfg.IsDoubao() {
+		f := audioFormat{16000, 24000}
+		if err := c.send(ctx, sessionCreateDoubao(cfg, prompt)); err != nil {
+			return f, err
+		}
+		setup, cancel := context.WithTimeout(ctx, 10*time.Second)
+		_, err := waitFor(setup, events, "session.created", "session.updated")
+		cancel()
+		if err != nil {
+			return f, err
+		}
+		return f, nil
+	}
 	var first error // the most telling error: later ones may just be the server hanging up
 	for i, f := range formats {
 		if err := c.send(ctx, sessionUpdate(cfg, prompt, f)); err != nil {
@@ -203,6 +228,34 @@ func configure(ctx context.Context, c *conn, events <-chan serverEvent, cfg Conf
 		}
 	}
 	return formats[len(formats)-1], first
+}
+
+func sessionCreateDoubao(cfg Config, prompt string) map[string]any {
+	return map[string]any{
+		"type": "session.create",
+		"session": map[string]any{
+			"model":        DoubaoModelVersion,
+			"instructions": prompt,
+			"audio": map[string]any{
+				"input": map[string]any{
+					"format": map[string]any{
+						"type": "pcm",
+						"rate": 16000,
+					},
+				},
+				"output": map[string]any{
+					"format": map[string]any{
+						"type": "pcm_s16le",
+						"rate": 24000,
+					},
+					"speed":    0,
+					"loudness": 0,
+					"voice":    cfg.Voice,
+				},
+			},
+			"tools": []any{doubaoEndCallTool},
+		},
+	}
 }
 
 func sessionUpdate(cfg Config, prompt string, f audioFormat) map[string]any {
@@ -283,17 +336,28 @@ func talk(ctx context.Context, cfg Config, ss *session, line Line) (usage Usage,
 	usage.Format = format.String()
 	down := newDecimator(format.out)
 	fast := newStretcher(cfg.SpeechRate)
-	// Speak first. The server only creates a response from some input, so
-	// a text item tells the model the call is connected; the greeting is in
-	// the instructions.
-	if err := c.send(ctx, map[string]any{"type": "conversation.item.create", "item": map[string]any{
-		"type": "message", "role": "user",
-		"content": []any{map[string]any{"type": "input_text", "text": connectedCue}},
-	}}); err != nil {
-		return usage, err
-	}
-	if err := c.send(ctx, map[string]any{"type": "response.create"}); err != nil {
-		return usage, err
+
+	if cfg.IsDoubao() {
+		// Doubao uses speech_text_buffer.commit to speak the greeting text directly.
+		if err := c.send(ctx, map[string]any{
+			"type": "speech_text_buffer.commit",
+			"text": cfg.Greeting,
+		}); err != nil {
+			return usage, err
+		}
+	} else {
+		// Speak first. The server only creates a response from some input, so
+		// a text item tells the model the call is connected; the greeting is in
+		// the instructions.
+		if err := c.send(ctx, map[string]any{"type": "conversation.item.create", "item": map[string]any{
+			"type": "message", "role": "user",
+			"content": []any{map[string]any{"type": "input_text", "text": connectedCue}},
+		}}); err != nil {
+			return usage, err
+		}
+		if err := c.send(ctx, map[string]any{"type": "response.create"}); err != nil {
+			return usage, err
+		}
 	}
 	line.SetPhase(phaseTalking)
 	greeted := false // the first response started
@@ -418,7 +482,11 @@ func talk(ctx context.Context, cfg Config, ss *session, line Line) (usage Usage,
 			if !heardAt.IsZero() && now.Sub(heardAt) > replyWait && !responding && !ending {
 				heardAt = time.Time{}
 				usage.Nudged++
-				c.send(ctx, map[string]any{"type": "response.create"})
+				if cfg.IsDoubao() {
+					c.send(ctx, map[string]any{"type": "input_audio_buffer.commit"})
+				} else {
+					c.send(ctx, map[string]any{"type": "response.create"})
+				}
 			}
 			if gap := now.Sub(time.Unix(0, lastFrame.Load())); gap > audioGap != audioLost {
 				audioLost = !audioLost
@@ -478,7 +546,7 @@ func talk(ctx context.Context, cfg Config, ss *session, line Line) (usage Usage,
 					continue
 				}
 				line.SetError("实时语音接口报错：" + e.errorText())
-			case "input_audio_buffer.speech_started":
+			case "input_audio_buffer.speech_started", "conversation.item.input_audio_transcription.started":
 				lastActivity = time.Now()
 				usage.SpeechTurns++
 				heardAt = time.Time{}
@@ -497,14 +565,14 @@ func talk(ctx context.Context, cfg Config, ss *session, line Line) (usage Usage,
 				// all the same.
 				heardAt = lastActivity
 			case "conversation.item.input_audio_transcription.delta":
-				if text := e.Text + e.Stash; text != "" {
+				if text := cmp.Or(e.Delta, e.Text+e.Stash); text != "" {
 					line.Transcript(roleCaller, text, false)
 				}
 			case "conversation.item.input_audio_transcription.completed":
 				lastActivity = time.Now()
 				usage.Heard++
-				line.Transcript(roleCaller, strings.TrimSpace(e.Transcript), true)
-			case "response.created":
+				line.Transcript(roleCaller, strings.TrimSpace(cmp.Or(e.Transcript, e.Text)), true)
+			case "response.created", "response.output_audio.started":
 				responding, muted, greeted = true, false, true
 				heardAt = time.Time{}
 				usage.Replies++
@@ -512,7 +580,7 @@ func talk(ctx context.Context, cfg Config, ss *session, line Line) (usage Usage,
 					wrapUp("这通电话已经说了很多轮。")
 				}
 				spoken.Reset()
-			case "response.audio.delta":
+			case "response.audio.delta", "response.output_audio.delta":
 				if pcm, err := base64.StdEncoding.DecodeString(e.Delta); err == nil && !muted {
 					speech := down.process(pcm)
 					if firstAudio.IsZero() {
@@ -521,25 +589,51 @@ func talk(ctx context.Context, cfg Config, ss *session, line Line) (usage Usage,
 					replyBytes += len(speech)
 					line.Play(fast.process(speech))
 				}
-			case "response.audio.done":
+			case "response.audio.done", "response.output_audio.done":
 				endReply()
 				if !muted {
 					line.Play(fast.flush())
 				}
 				line.EndSpeech()
-			case "response.audio_transcript.delta":
+			case "response.audio_transcript.delta", "response.output_text.delta":
 				spoken.WriteString(e.Delta)
 				line.Transcript(roleAssistant, spoken.String(), false)
-			case "response.audio_transcript.done":
-				line.Transcript(roleAssistant, strings.TrimSpace(e.Transcript), true)
+			case "response.audio_transcript.done", "response.output_text.done":
+				line.Transcript(roleAssistant, strings.TrimSpace(cmp.Or(e.Transcript, e.Text)), true)
 				spoken.Reset()
 			case "response.function_call_arguments.done":
-				if e.Name == "end_call" {
+				callID := e.CallID
+				isEndCall := e.Name == "end_call"
+				for _, it := range e.Items {
+					if it.Name == "end_call" {
+						isEndCall = true
+						if it.CallID != "" {
+							callID = it.CallID
+						}
+						break
+					}
+				}
+				if isEndCall {
 					ending = true
 					line.SetPhase(phaseEnding)
-					c.send(ctx, map[string]any{"type": "conversation.item.create", "item": map[string]any{
-						"type": "function_call_output", "call_id": e.CallID, "output": "好的，电话将在你说完后挂断。",
-					}})
+					if cfg.IsDoubao() {
+						c.send(ctx, map[string]any{
+							"type": "conversation.item.create",
+							"items": []any{
+								map[string]any{
+									"call_id": callID,
+									"role":    "tool",
+									"content": []any{
+										map[string]any{"type": "input_text", "text": "好的，电话将在你说完后挂断。"},
+									},
+								},
+							},
+						})
+					} else {
+						c.send(ctx, map[string]any{"type": "conversation.item.create", "item": map[string]any{
+							"type": "function_call_output", "call_id": callID, "output": "好的，电话将在你说完后挂断。",
+						}})
+					}
 				}
 			case "response.done":
 				responding = false

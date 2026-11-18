@@ -24,7 +24,10 @@ func dial(ctx context.Context, endpoint, apiKey string) (*conn, error) {
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 	ws, resp, err := websocket.Dial(ctx, endpoint, &websocket.DialOptions{
-		HTTPHeader: http.Header{"Authorization": {"Bearer " + apiKey}},
+		HTTPHeader: http.Header{
+			"Authorization": {"Bearer " + apiKey},
+			"X-Api-Key":     {apiKey},
+		},
 	})
 	if err != nil {
 		if resp != nil && resp.Body != nil {
@@ -42,7 +45,7 @@ func dial(ctx context.Context, endpoint, apiKey string) (*conn, error) {
 }
 
 func (c *conn) send(ctx context.Context, event map[string]any) error {
-	event["event_id"] = fmt.Sprintf("event_haobot_%d_%d", time.Now().UnixMilli(), c.seq.Add(1))
+	event["event_id"] = fmt.Sprintf("event_simcallhub_%d_%d", time.Now().UnixMilli(), c.seq.Add(1))
 	data, err := json.Marshal(event)
 	if err != nil {
 		return err
@@ -63,7 +66,15 @@ type serverEvent struct {
 	Transcript string `json:"transcript"`
 	Name       string `json:"name"`
 	CallID     string `json:"call_id"`
-	Error      *struct {
+	Arguments  string `json:"arguments"`
+	Items      []struct {
+		ID        string `json:"id"`
+		Type      string `json:"type"`
+		CallID    string `json:"call_id"`
+		Name      string `json:"name"`
+		Arguments string `json:"arguments"`
+	} `json:"items"`
+	Error *struct {
 		Type    string `json:"type"`
 		Code    string `json:"code"`
 		Message string `json:"message"`
@@ -73,11 +84,13 @@ type serverEvent struct {
 			Input struct {
 				Format struct {
 					SampleRate int `json:"sample_rate"`
+					Rate       int `json:"rate"`
 				} `json:"format"`
 			} `json:"input"`
 			Output struct {
 				Format struct {
 					SampleRate int `json:"sample_rate"`
+					Rate       int `json:"rate"`
 				} `json:"format"`
 			} `json:"output"`
 		} `json:"audio"`
@@ -129,9 +142,9 @@ func (c *conn) events(ctx context.Context) (<-chan serverEvent, <-chan error) {
 // errServerGone means the connection closed: retrying on it is pointless.
 var errServerGone = errors.New("实时语音接口断开了连接")
 
-// waitFor returns the first event of the given type, failing on an error
-// event.
-func waitFor(ctx context.Context, events <-chan serverEvent, kind string) (serverEvent, error) {
+// waitFor returns the first event matching any of the given kinds, failing
+// on an error event.
+func waitFor(ctx context.Context, events <-chan serverEvent, kinds ...string) (serverEvent, error) {
 	for {
 		select {
 		case <-ctx.Done():
@@ -143,8 +156,10 @@ func waitFor(ctx context.Context, events <-chan serverEvent, kind string) (serve
 			if e.Type == "error" {
 				return e, errors.New("实时语音接口报错：" + e.errorText())
 			}
-			if e.Type == kind {
-				return e, nil
+			for _, kind := range kinds {
+				if e.Type == kind {
+					return e, nil
+				}
 			}
 		}
 	}
