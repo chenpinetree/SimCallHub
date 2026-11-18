@@ -549,3 +549,179 @@ func TestSummaryFieldsAreChecked(t *testing.T) {
 		t.Fatalf("valid values changed: %+v", s)
 	}
 }
+
+func TestDoubaoEndpointAndValidation(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.Model = DoubaoDefaultModel
+	cfg.Normalize()
+	if !cfg.IsDoubao() {
+		t.Fatal("IsDoubao should be true for doubao-seeduplex-3.0")
+	}
+	if cfg.Voice != DoubaoDefaultVoice {
+		t.Fatalf("Voice = %q, want %q", cfg.Voice, DoubaoDefaultVoice)
+	}
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("Validate returned error: %v", err)
+	}
+
+	// Doubao endpoint should default to official endpoint without needing Bailian classifier config
+	ep, err := cfg.Endpoint(classify.Config{})
+	if err != nil {
+		t.Fatalf("Endpoint error: %v", err)
+	}
+	if ep != DoubaoDefaultEndpoint {
+		t.Fatalf("Endpoint = %q, want %q", ep, DoubaoDefaultEndpoint)
+	}
+}
+
+func TestDoubaoTalk(t *testing.T) {
+	var gotAuth, gotKey string
+	var sessionCreated bool
+	var greetingText string
+	var gotAudio int
+	var toolReplied bool
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotAuth = r.Header.Get("Authorization")
+		gotKey = r.Header.Get("X-Api-Key")
+		ws, err := websocket.Accept(w, r, nil)
+		if err != nil {
+			return
+		}
+		defer ws.CloseNow()
+		ctx := r.Context()
+		ws.SetReadLimit(1 << 22)
+		send := func(e map[string]any) {
+			data, _ := json.Marshal(e)
+			ws.Write(ctx, websocket.MessageText, data)
+		}
+		speak := func(text string, endCall bool) {
+			send(map[string]any{"type": "response.output_audio.started"})
+			send(map[string]any{
+				"type":  "response.output_audio.delta",
+				"delta": base64.StdEncoding.EncodeToString(sine(24000, 500, 300*time.Millisecond, 8000)),
+			})
+			send(map[string]any{"type": "response.output_audio.done"})
+			send(map[string]any{"type": "response.output_text.delta", "delta": text})
+			send(map[string]any{"type": "response.output_text.done", "text": text})
+			if endCall {
+				send(map[string]any{
+					"type": "response.function_call_arguments.done",
+					"items": []any{
+						map[string]any{
+							"id":        "item_001",
+							"type":      "function_call",
+							"call_id":   "call_doubao_1",
+							"name":      "end_call",
+							"arguments": "{}",
+						},
+					},
+				})
+			}
+			send(map[string]any{"type": "response.done"})
+		}
+
+		for {
+			_, data, err := ws.Read(ctx)
+			if err != nil {
+				return
+			}
+			var e map[string]any
+			json.Unmarshal(data, &e)
+			switch e["type"] {
+			case "session.create":
+				sess := e["session"].(map[string]any)
+				if sess["model"] == DoubaoModelVersion {
+					sessionCreated = true
+					send(map[string]any{
+						"type":     "session.created",
+						"event_id": "event_sess_1",
+						"session":  map[string]any{"id": "dialog_123"},
+					})
+				}
+			case "speech_text_buffer.commit":
+				greetingText = e["text"].(string)
+				speak("您好，我是帮机主接听的助理", false)
+			case "input_audio_buffer.append":
+				audio, _ := base64.StdEncoding.DecodeString(e["audio"].(string))
+				gotAudio += len(audio)
+				if gotAudio >= 32000 {
+					send(map[string]any{"type": "conversation.item.input_audio_transcription.started"})
+					send(map[string]any{
+						"type":  "conversation.item.input_audio_transcription.delta",
+						"delta": "请问是张三吗",
+					})
+					send(map[string]any{
+						"type":       "conversation.item.input_audio_transcription.completed",
+						"transcript": "请问是张三吗",
+					})
+					speak("他现在不方便接听，请问有什么事吗？好的再见", true)
+				}
+			case "conversation.item.create":
+				if items, ok := e["items"].([]any); ok && len(items) > 0 {
+					first := items[0].(map[string]any)
+					if first["role"] == "tool" && first["call_id"] == "call_doubao_1" {
+						toolReplied = true
+					}
+				}
+			}
+		}
+	}))
+	defer srv.Close()
+
+	line := newFakeLine()
+	go func() {
+		tick := time.NewTicker(20 * time.Millisecond)
+		defer tick.Stop()
+		for range tick.C {
+			select {
+			case line.in <- make([]byte, 320):
+			case <-line.done:
+				return
+			}
+		}
+	}()
+
+	cfg := DefaultConfig()
+	cfg.Model = DoubaoDefaultModel
+	cfg.Greeting = "您好，找谁呀？"
+	cfg.Normalize()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	endpoint := "ws" + strings.TrimPrefix(srv.URL, "http") + "/api/v3/duplex/realtime/dialogue"
+	ss, err := open(ctx, cfg, endpoint, "volc-api-key-123")
+	if err != nil {
+		t.Fatalf("open failed: %v", err)
+	}
+
+	usage, err := talk(ctx, cfg, ss, line)
+	if err != nil {
+		t.Fatalf("talk failed: %v", err)
+	}
+
+	if gotAuth != "Bearer volc-api-key-123" {
+		t.Errorf("gotAuth = %q", gotAuth)
+	}
+	if gotKey != "volc-api-key-123" {
+		t.Errorf("gotKey = %q", gotKey)
+	}
+	if !sessionCreated {
+		t.Error("session.create was not received with model 1.2.6.1")
+	}
+	if greetingText != "您好，找谁呀？" {
+		t.Errorf("greetingText = %q, want %q", greetingText, "您好，找谁呀？")
+	}
+	if !toolReplied {
+		t.Error("end_call tool was not replied to via conversation.item.create")
+	}
+	if usage.Replies < 2 {
+		t.Errorf("usage.Replies = %d, want at least 2", usage.Replies)
+	}
+	line.mu.Lock()
+	defer line.mu.Unlock()
+	if !line.hungUp {
+		t.Error("call was not hung up after end_call")
+	}
+}

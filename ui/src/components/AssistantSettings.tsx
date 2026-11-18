@@ -5,16 +5,23 @@ import { Bot, CheckCircle2, Cpu, FlaskConical, Mic, Save, ShieldAlert, ShieldChe
 import { api, type AssistantConfig, type AssistantSettings } from "../lib/api";
 import { Alert, Button, Card, CardBody, CardHeader, Collapsible, Field, Input, Segmented, Select, Spinner, Switch, Textarea, useToast } from "./ui";
 
-// Realtime speech models on Model Studio, best first.
+// Realtime speech models on Volcano Engine and Model Studio.
 const models = [
-  { id: "qwen3.8-omni-flash-realtime", name: "Qwen3.8 Omni Flash", note: "推荐 · 最新，反应快，能听懂“嗯”“喂”不打断" },
-  { id: "qwen3.5-omni-plus-realtime", name: "Qwen3.5 Omni Plus", note: "理解和表达更好，费用更高" },
-  { id: "qwen3.5-omni-flash-realtime", name: "Qwen3.5 Omni Flash", note: "便宜、快" },
-  { id: "qwen3-omni-flash-realtime", name: "Qwen3 Omni Flash", note: "旧版，按声音停顿断句" },
+  { id: "doubao-seeduplex-3.0", name: "豆包 Seeduplex 3.0", note: "推荐 · 火山引擎端到端实时语音大模型，超拟人全双工" },
+  { id: "qwen3.8-omni-flash-realtime", name: "Qwen3.8 Omni Flash", note: "阿里云百炼 · 最新，反应快，能听懂“嗯”“喂”不打断" },
+  { id: "qwen3.5-omni-plus-realtime", name: "Qwen3.5 Omni Plus", note: "阿里云百炼 · 理解和表达更好，费用更高" },
+  { id: "qwen3.5-omni-flash-realtime", name: "Qwen3.5 Omni Flash", note: "阿里云百炼 · 便宜、快" },
+  { id: "qwen3-omni-flash-realtime", name: "Qwen3 Omni Flash", note: "阿里云百炼 · 旧版，按声音停顿断句" },
 ];
 
 type Voice = { id: string; name: string };
 // Mandarin voices of each model family.
+const voicesDoubao: Voice[] = [
+  { id: "zh_female_vv_jupiter_bigtts", name: "灿灿 Vivi 2.0（活泼女声 · 推荐）" },
+  { id: "zh_female_xiaohe_jupiter_bigtts", name: "小何 2.0（甜美活泼女声）" },
+  { id: "zh_male_yunzhou_jupiter_bigtts", name: "云舟 2.0（清爽沉稳男声）" },
+  { id: "zh_male_xiaotian_jupiter_bigtts", name: "小天 2.0（清爽磁性男声）" },
+];
 const voices38: Voice[] = [
   { id: "Tina", name: "甜甜 Tina（温暖女声）" },
   { id: "Liora Mira", name: "清欢 Liora Mira（温柔女声）" },
@@ -47,10 +54,14 @@ const voices3: Voice[] = [
 ];
 
 function voicesFor(model: string): Voice[] {
+  if (model.includes("doubao") || model.includes("seeduplex")) return voicesDoubao;
   if (model.startsWith("qwen3-omni")) return voices3;
   if (model.startsWith("qwen3.5")) return voices35;
   return voices38;
 }
+
+const DOUBAO_ENDPOINT = "wss://openspeech.bytedance.com/api/v3/duplex/realtime/dialogue";
+const isDoubaoModel = (m: string) => m.includes("doubao") || m.includes("seeduplex");
 
 // The endpoint choice: derived from the classifier, a region of the
 // workspace, or a URL typed in.
@@ -59,7 +70,7 @@ const regionURL = /^wss:\/\/([^./]+)\.(ap-southeast-1|cn-beijing)\.maas\.aliyunc
 const buildRegionURL = (workspace: string, region: string) => `wss://${workspace || "{WorkspaceId}"}.${region}.maas.aliyuncs.com/api-ws/v1/realtime`;
 
 function endpointMode(url: string): EndpointMode {
-  if (!url) return "auto";
+  if (!url || url === DOUBAO_ENDPOINT) return "auto";
   const m = url.match(regionURL);
   return m ? (m[2] as EndpointMode) : "custom";
 }
@@ -120,13 +131,22 @@ export function AssistantSection() {
   };
   const pickModel = (model: string) => {
     const list = voicesFor(model);
-    // Voices differ between model families; keep the voice when it exists.
-    set({ model, voice: list.some((v) => v.id === form.voice) ? form.voice : list[0].id });
+    const isDoubao = isDoubaoModel(model);
+    const nextVoice = list.some((v) => v.id === form.voice) ? form.voice : list[0].id;
+    const patch: Partial<AssistantConfig> = { model, voice: nextVoice };
+    if (isDoubao && (form.url.includes("aliyuncs.com") || mode === "ap-southeast-1" || mode === "cn-beijing")) {
+      setMode("auto");
+      patch.url = "";
+    } else if (!isDoubao && form.url.includes("bytedance.com")) {
+      setMode("auto");
+      patch.url = "";
+    }
+    set(patch);
   };
   const pickMode = (m: EndpointMode) => {
     setMode(m);
     if (m === "auto") set({ url: "" });
-    else if (m === "custom") set({ url: form.url || data.derivedEndpoint.split("?")[0] });
+    else if (m === "custom") set({ url: form.url || (isDoubao ? DOUBAO_ENDPOINT : data.derivedEndpoint.split("?")[0]) });
     else set({ url: buildRegionURL(workspace, m) });
   };
   const changeWorkspace = (id: string) => {
@@ -136,7 +156,10 @@ export function AssistantSection() {
 
   const payload = () => ({ ...form, apiKey: apiKey === null ? undefined : apiKey });
   const dirty = apiKey !== null || JSON.stringify(form) !== JSON.stringify(fields(data));
-  const effective = (form.url || data.derivedEndpoint.split("?")[0]) + (form.url.includes("model=") ? "" : `?model=${form.model}`);
+  const isDoubao = isDoubaoModel(form.model);
+  const effective = isDoubao
+    ? (form.url || DOUBAO_ENDPOINT)
+    : (form.url || data.derivedEndpoint.split("?")[0]) + (form.url.includes("model=") ? "" : `?model=${form.model}`);
   const voices = voicesFor(form.model);
 
   const save = async () => {
@@ -254,12 +277,18 @@ export function AssistantSection() {
         <Collapsible
           icon={Cpu}
           title="模型与接口"
-          subtitle={`${models.find((m) => m.id === form.model)?.name ?? form.model} · ${{ auto: "跟随智能分类", "ap-southeast-1": "新加坡", "cn-beijing": "北京", custom: "自定义地址" }[mode]}${apiKey === null && data.hasOwnKey ? " · 单独的 API Key" : ""}`}
+          subtitle={`${models.find((m) => m.id === form.model)?.name ?? form.model} · ${
+            isDoubao
+              ? mode === "auto"
+                ? "火山引擎官方默认"
+                : "自定义地址"
+              : { auto: "跟随智能分类", "ap-southeast-1": "新加坡", "cn-beijing": "北京", custom: "自定义地址" }[mode]
+          }${apiKey === null && data.hasOwnKey ? " · 单独的 API Key" : ""}`}
           defaultOpen={!!data.problem}
         >
           <div className="space-y-2">
             <div className="text-[13px] font-medium">实时语音模型</div>
-            <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
+            <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
               {models.map((m) => {
                 const active = !customModel && form.model === m.id;
                 return (
@@ -292,30 +321,37 @@ export function AssistantSection() {
                 <div className="mt-0.5 text-[11px] text-muted">填写其他实时模型或快照版本</div>
               </button>
             </div>
-            {customModel && <Input value={form.model} onChange={(e) => pickModel(e.target.value.trim())} placeholder="qwen3.8-omni-flash-realtime-2026-xx-xx" className="font-mono" />}
+            {customModel && <Input value={form.model} onChange={(e) => pickModel(e.target.value.trim())} placeholder="doubao-seeduplex-3.0 或 qwen3.8-omni-flash-realtime" className="font-mono" />}
           </div>
 
           <div className="space-y-2">
             <div className="text-[13px] font-medium">接口地址</div>
             <Segmented
               size="sm"
-              value={mode}
+              value={isDoubao ? (mode === "custom" ? "custom" : "auto") : mode}
               onChange={pickMode}
-              options={[
-                { value: "auto", label: "跟随智能分类" },
-                { value: "ap-southeast-1", label: "新加坡" },
-                { value: "cn-beijing", label: "北京" },
-                { value: "custom", label: "自定义" },
-              ]}
+              options={
+                isDoubao
+                  ? [
+                      { value: "auto", label: "火山引擎官方默认" },
+                      { value: "custom", label: "自定义地址" },
+                    ]
+                  : [
+                      { value: "auto", label: "跟随智能分类" },
+                      { value: "ap-southeast-1", label: "新加坡" },
+                      { value: "cn-beijing", label: "北京" },
+                      { value: "custom", label: "自定义" },
+                    ]
+              }
             />
-            {(mode === "ap-southeast-1" || mode === "cn-beijing") && (
+            {!isDoubao && (mode === "ap-southeast-1" || mode === "cn-beijing") && (
               <Field label="业务空间 ID" hint="在百炼控制台的“业务空间”里查看，形如 ws-xxxxxxxx。北京和新加坡的业务空间和 API Key 不通用">
                 <Input value={workspace} onChange={(e) => changeWorkspace(e.target.value.trim())} placeholder="ws-xxxxxxxx" className="font-mono" />
               </Field>
             )}
-            {mode === "custom" && <Input value={form.url} onChange={(e) => set({ url: e.target.value.trim() })} placeholder="wss://…/api-ws/v1/realtime" className="font-mono text-xs" />}
-            {mode === "auto" && !data.derivedEndpoint && <p className="text-xs text-warn">“智能分类”里还没有百炼的 Base URL，请选择地域并填写业务空间 ID。</p>}
-            {(form.url || data.derivedEndpoint) && (
+            {mode === "custom" && <Input value={form.url} onChange={(e) => set({ url: e.target.value.trim() })} placeholder={isDoubao ? "wss://openspeech.bytedance.com/api/v3/duplex/realtime/dialogue" : "wss://…/api-ws/v1/realtime"} className="font-mono text-xs" />}
+            {mode === "auto" && !isDoubao && !data.derivedEndpoint && <p className="text-xs text-warn">“智能分类”里还没有百炼的 Base URL，请选择地域并填写业务空间 ID。</p>}
+            {(form.url || isDoubao || data.derivedEndpoint) && (
               <p className="font-mono text-[11px] break-all text-subtle">
                 实际连接：{effective}
               </p>
@@ -327,9 +363,11 @@ export function AssistantSection() {
             hint={
               apiKey === null && data.hasOwnKey
                 ? `已单独保存：${data.ownKeyHint}。只保存在本机（加密）。`
-                : data.hasSharedKey
-                  ? "留空则使用“智能分类”里的 API Key。接口地域不同时需要填写对应地域的 Key。"
-                  : "“智能分类”里也没有 Key，请在这里填写。"
+                : isDoubao
+                  ? "请填写火山引擎的 API Key（在火山引擎控制台 > API Key 管理中创建获取）。"
+                  : data.hasSharedKey
+                    ? "留空则使用“智能分类”里的 API Key。接口地域不同时需要填写对应地域的 Key。"
+                    : "“智能分类”里也没有 Key，请在这里填写。"
             }
           >
             {apiKey === null && data.hasOwnKey ? (
@@ -385,7 +423,7 @@ export function AssistantSection() {
 
         <p className="flex items-start gap-1.5 text-[11px] leading-relaxed text-subtle">
           <ShieldAlert className="mt-px size-3.5 shrink-0" />
-          通话的声音会实时发送到阿里云百炼的语音模型，无法像短信那样先去除敏感信息；通话文字记录和小结只保存在本机。小结使用“智能分类”里的文本模型，按 Token 计费。
+          通话的声音会实时发送到所选服务商（火山引擎或阿里云百炼）的语音模型，无法像短信那样先去除敏感信息；通话文字记录和小结只保存在本机。小结使用“智能分类”里的文本模型，按 Token 计费。
         </p>
         {testResult && <p className={clsx("rounded-xl px-3 py-2 text-xs", testResult.ok ? "bg-ok/10 text-ok" : "bg-bad/10 text-bad")}>{testResult.text}</p>}
         <div className="flex flex-wrap justify-end gap-2">
