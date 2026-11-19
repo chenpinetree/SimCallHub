@@ -23,6 +23,8 @@ const (
 	DoubaoDefaultVoice    = "zh_female_vv_jupiter_bigtts"
 	DoubaoDefaultEndpoint = "wss://openspeech.bytedance.com/api/v3/duplex/realtime/dialogue"
 	DefaultGreeting       = "喂，您好，请问是哪位呀？"
+	DefaultVoicemailText  = "您好，我现在不方便接听电话，请在听到提示音后直接留言，我看到后会尽快给您回电，谢谢。"
+	MaxVoicemailItems     = 3
 	defaultDelay          = 10
 	defaultMaxSec         = 180
 	defaultRate           = 1.1
@@ -73,9 +75,55 @@ type Config struct {
 	Record   string `json:"record"`
 	KeepDays int    `json:"keepDays"`
 
+	// Voicemail configures the AI-synthesized voicemail greeting section.
+	Voicemail VoicemailConfig `json:"voicemail"`
+
 	// APIKey is the assistant's own key; empty uses the classifier's. It is
 	// stored sealed, never in this JSON.
 	APIKey string `json:"-"`
+}
+
+// VoicemailItem is one generated WAV voicemail clip stored under data/voicemail/.
+type VoicemailItem struct {
+	ID          string    `json:"id"`
+	Name        string    `json:"name"`
+	Text        string    `json:"text"`
+	FileName    string    `json:"fileName"`
+	Voice       string    `json:"voice"`
+	SpeechRate  float64   `json:"speechRate"`
+	Style       string    `json:"style"`
+	DurationSec float64   `json:"durationSec"`
+	CreatedAt   time.Time `json:"createdAt"`
+}
+
+// VoicemailConfig holds the voicemail feature's independent parameters and up to 3 saved audio clips.
+type VoicemailConfig struct {
+	Enabled      bool            `json:"enabled"`
+	RingDelaySec int             `json:"ringDelaySec"`
+	Voice        string          `json:"voice"`
+	SpeechRate   float64         `json:"speechRate"`
+	Style        string          `json:"style"`
+	Text         string          `json:"text"`
+	ActiveID     string          `json:"activeId"`
+	Items        []VoicemailItem `json:"items"`
+}
+
+// RingDelay is how long a call rings before voicemail answers.
+func (v VoicemailConfig) RingDelay() time.Duration {
+	return time.Duration(v.RingDelaySec) * time.Second
+}
+
+// ActiveItem returns the selected voicemail clip, or the first clip if activeId is unset.
+func (v VoicemailConfig) ActiveItem() *VoicemailItem {
+	for i := range v.Items {
+		if v.Items[i].ID == v.ActiveID {
+			return &v.Items[i]
+		}
+	}
+	if len(v.Items) > 0 {
+		return &v.Items[0]
+	}
+	return nil
 }
 
 // Models lists the realtime speech models offered in the UI.
@@ -120,6 +168,14 @@ func DefaultConfig() Config {
 		Voice: DefaultVoice, MaxDurationSec: defaultMaxSec, SpeechRate: defaultRate,
 		DailyLimit: defaultDaily, PerCallerMax: defaultPerPeer, MaxTurns: defaultTurns,
 		Record: RecordAssistant, KeepDays: defaultKeepDays, Style: StyleWarm,
+		Voicemail: VoicemailConfig{
+			RingDelaySec: defaultDelay,
+			Voice:        DefaultVoice,
+			SpeechRate:   defaultRate,
+			Style:        StyleWarm,
+			Text:         DefaultVoicemailText,
+			Items:        []VoicemailItem{},
+		},
 	}
 }
 
@@ -186,17 +242,66 @@ func (c *Config) Normalize() {
 	if c.KeepDays == 0 {
 		c.KeepDays = d.KeepDays
 	}
+	if c.Voicemail.SpeechRate == 0 && c.Voicemail.Style == "" && c.Voicemail.RingDelaySec == 0 {
+		c.Voicemail.RingDelaySec = d.Voicemail.RingDelaySec
+	}
+	if c.Voicemail.SpeechRate == 0 {
+		c.Voicemail.SpeechRate = d.Voicemail.SpeechRate
+	}
+	if c.Voicemail.Style == "" {
+		c.Voicemail.Style = StyleWarm
+	}
+	if c.IsDoubao() {
+		if c.Voicemail.Voice == "" || c.Voicemail.Voice == DefaultVoice {
+			c.Voicemail.Voice = DoubaoDefaultVoice
+		}
+	} else {
+		if c.Voicemail.Voice == "" || c.Voicemail.Voice == DoubaoDefaultVoice {
+			c.Voicemail.Voice = d.Voice
+		}
+	}
+	if strings.TrimSpace(c.Voicemail.Text) == "" {
+		c.Voicemail.Text = DefaultVoicemailText
+	}
+	if c.Voicemail.Items == nil {
+		c.Voicemail.Items = []VoicemailItem{}
+	}
+	if c.Voicemail.ActiveID != "" {
+		found := false
+		for _, it := range c.Voicemail.Items {
+			if it.ID == c.Voicemail.ActiveID {
+				found = true
+				break
+			}
+		}
+		if !found {
+			c.Voicemail.ActiveID = ""
+		}
+	}
+	if c.Voicemail.ActiveID == "" && len(c.Voicemail.Items) > 0 {
+		c.Voicemail.ActiveID = c.Voicemail.Items[0].ID
+	}
 }
 
 // Validate checks a configuration before it is saved.
 func (c Config) Validate() error {
+	if c.Enabled && c.Voicemail.Enabled {
+		return errors.New("“语音留言”与“AI 接听助手”功能冲突，不能同时开启，请先关闭其中一个")
+	}
+	if c.Voicemail.Enabled && c.Record != RecordAll {
+		return errors.New("开启“语音留言”时，“通话录音”必须设置为“录下所有通话”")
+	}
 	switch {
 	case c.RingDelaySec < 0 || c.RingDelaySec > 60:
 		return errors.New("响铃等待时间需要在 0 到 60 秒之间")
+	case c.Voicemail.RingDelaySec < 0 || c.Voicemail.RingDelaySec > 60:
+		return errors.New("语音留言响铃等待时间需要在 0 到 60 秒之间")
 	case c.MaxDurationSec < 30 || c.MaxDurationSec > 600:
 		return errors.New("单次通话时长需要在 30 到 600 秒之间")
 	case c.SpeechRate < 0.8 || c.SpeechRate > 1.5:
 		return errors.New("语速需要在 0.8 到 1.5 倍之间")
+	case c.Voicemail.SpeechRate < 0.8 || c.Voicemail.SpeechRate > 1.5:
+		return errors.New("语音留言语速需要在 0.8 到 1.5 倍之间")
 	case c.DailyLimit < 1 || c.DailyLimit > 500:
 		return errors.New("每天最多接听次数需要在 1 到 500 之间")
 	case c.PerCallerMax < 1 || c.PerCallerMax > 50:
@@ -205,6 +310,10 @@ func (c Config) Validate() error {
 		return errors.New("每通电话最多回复次数需要在 3 到 50 之间")
 	case c.Style != StyleWarm && c.Style != StyleFormal && c.Style != StyleBrief:
 		return errors.New("未知的说话风格")
+	case c.Voicemail.Style != StyleWarm && c.Voicemail.Style != StyleFormal && c.Voicemail.Style != StyleBrief:
+		return errors.New("未知的语音留言说话风格")
+	case len(c.Voicemail.Items) > MaxVoicemailItems:
+		return fmt.Errorf("最多只能保存 %d 段语音留言", MaxVoicemailItems)
 	case len([]rune(c.OwnerName)) > 20:
 		return errors.New("称呼不能超过 20 个字")
 	case c.Record != RecordOff && c.Record != RecordAssistant && c.Record != RecordAll:

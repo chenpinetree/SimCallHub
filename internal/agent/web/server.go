@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"net/url"
 	"path"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -56,6 +57,8 @@ type Deps struct {
 	Phonebook *phonebook.Book
 	// RecordingDir holds call recordings.
 	RecordingDir string
+	// VoicemailDir holds generated WAV voicemail greetings (data/voicemail).
+	VoicemailDir string
 	// SIP is the embedded SIP VoIP extension PBX server.
 	SIP *sip.Server
 	Log *slog.Logger
@@ -76,6 +79,16 @@ func New(d Deps) (*Server, error) {
 	}
 	if d.Phonebook == nil {
 		d.Phonebook = &phonebook.Book{Store: d.Store}
+	}
+	if d.VoicemailDir == "" {
+		if d.RecordingDir != "" {
+			d.VoicemailDir = filepath.Join(filepath.Dir(d.RecordingDir), "voicemail")
+		} else {
+			d.VoicemailDir = filepath.Join("data", "voicemail")
+		}
+	}
+	if d.Assistant != nil && d.Assistant.VoicemailDir == "" {
+		d.Assistant.VoicemailDir = d.VoicemailDir
 	}
 	return &Server{Deps: d, limiter: newLoginLimiter(), app: app}, nil
 }

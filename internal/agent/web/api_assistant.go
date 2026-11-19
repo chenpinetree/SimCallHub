@@ -1,9 +1,13 @@
 package web
 
 import (
+	"cmp"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/url"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -143,11 +147,36 @@ func (s *Server) putAssistant(w http.ResponseWriter, r *http.Request) {
 	if !decode(w, r, &req) {
 		return
 	}
+	stored, err := s.Settings.Assistant(r.Context())
+	if err != nil {
+		s.serverError(w, err)
+		return
+	}
 	cfg, err := s.withAssistantKey(r, req)
 	if err != nil {
 		s.keyError(w, err)
 		return
 	}
+	// Preserve saved voicemail items and their file metadata while applying renames from the form.
+	if len(stored.Voicemail.Items) > 0 {
+		nameByID := map[string]string{}
+		for _, it := range req.Voicemail.Items {
+			if n := strings.TrimSpace(it.Name); n != "" {
+				nameByID[it.ID] = n
+			}
+		}
+		items := make([]assistant.VoicemailItem, len(stored.Voicemail.Items))
+		copy(items, stored.Voicemail.Items)
+		for i := range items {
+			if n, ok := nameByID[items[i].ID]; ok {
+				items[i].Name = n
+			}
+		}
+		cfg.Voicemail.Items = items
+	} else {
+		cfg.Voicemail.Items = []assistant.VoicemailItem{}
+	}
+	cfg.Normalize()
 	if err := cfg.Validate(); err != nil {
 		writeError(w, http.StatusUnprocessableEntity, err.Error())
 		return
@@ -160,11 +189,14 @@ func (s *Server) putAssistant(w http.ResponseWriter, r *http.Request) {
 		s.serverError(w, err)
 		return
 	}
-	state := "已关闭"
-	if cfg.Enabled {
-		state = "已开启"
+	switch {
+	case cfg.Voicemail.Enabled:
+		s.Devices.Note(r.Context(), "info", "语音留言已开启（模型 "+cfg.Model+"）")
+	case cfg.Enabled:
+		s.Devices.Note(r.Context(), "info", "AI 接听助手已开启（模型 "+cfg.Model+"）")
+	default:
+		s.Devices.Note(r.Context(), "info", "AI 接听与语音留言设置已保存（均处于关闭状态）")
 	}
-	s.Devices.Note(r.Context(), "info", "AI 接听助手"+state+"（模型 "+cfg.Model+"）")
 	writeJSON(w, http.StatusOK, s.assistantSettings(r, cfg))
 }
 
@@ -194,6 +226,222 @@ func (s *Server) testAssistant(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"latencyMs": latency.Milliseconds(), "format": format})
 }
 
+type generateVoicemailRequest struct {
+	assistantRequest
+	Name      string `json:"name"`
+	ReplaceID string `json:"replaceId"`
+}
+
+func (s *Server) generateVoicemail(w http.ResponseWriter, r *http.Request) {
+	var req generateVoicemailRequest
+	if !decode(w, r, &req) {
+		return
+	}
+	if s.Assistant == nil {
+		writeError(w, http.StatusServiceUnavailable, "语音合成服务不可用")
+		return
+	}
+	stored, err := s.Settings.Assistant(r.Context())
+	if err != nil {
+		s.serverError(w, err)
+		return
+	}
+	cfg, err := s.withAssistantKey(r, req.assistantRequest)
+	if err != nil {
+		s.keyError(w, err)
+		return
+	}
+	text := strings.TrimSpace(cfg.Voicemail.Text)
+	if text == "" {
+		writeError(w, http.StatusUnprocessableEntity, "请输入要播放的语音留言文本内容")
+		return
+	}
+	if len([]rune(text)) > 500 {
+		writeError(w, http.StatusUnprocessableEntity, "语音留言文本不能超过 500 字")
+		return
+	}
+
+	replaceIdx := -1
+	if req.ReplaceID != "" {
+		for i, it := range stored.Voicemail.Items {
+			if it.ID == req.ReplaceID {
+				replaceIdx = i
+				break
+			}
+		}
+	}
+	if replaceIdx < 0 && len(stored.Voicemail.Items) >= assistant.MaxVoicemailItems {
+		writeError(w, http.StatusUnprocessableEntity, fmt.Sprintf("最多只能保存 %d 段语音留言，请先删除或替换已有语音", assistant.MaxVoicemailItems))
+		return
+	}
+
+	// Build synthesis config using the selected model/endpoint/key and the voicemail section's voice/rate/style.
+	synthCfg := cfg
+	synthCfg.Enabled = false
+	synthCfg.Voicemail.Enabled = false
+	synthCfg.Voice = cmp.Or(cfg.Voicemail.Voice, cfg.Voice)
+	synthCfg.SpeechRate = cmp.Or(cfg.Voicemail.SpeechRate, cfg.SpeechRate)
+	synthCfg.Style = cmp.Or(cfg.Voicemail.Style, cfg.Style)
+	synthCfg.Normalize()
+
+	wav, dur, err := s.Assistant.SynthesizeVoicemail(r.Context(), synthCfg, text)
+	if err != nil {
+		writeError(w, http.StatusBadGateway, "AI 生成语音失败："+err.Error())
+		return
+	}
+
+	if err := os.MkdirAll(s.VoicemailDir, 0o700); err != nil {
+		s.serverError(w, fmt.Errorf("创建语音留言目录失败：%w", err))
+		return
+	}
+
+	now := time.Now()
+	id := fmt.Sprintf("vm-%d", now.UnixMilli())
+	fileName := id + ".wav"
+	filePath := filepath.Join(s.VoicemailDir, fileName)
+	if err := os.WriteFile(filePath, wav, 0o600); err != nil {
+		s.serverError(w, fmt.Errorf("保存语音留言音频失败：%w", err))
+		return
+	}
+
+	name := strings.TrimSpace(req.Name)
+	if name == "" {
+		if replaceIdx >= 0 {
+			name = stored.Voicemail.Items[replaceIdx].Name
+		} else {
+			name = fmt.Sprintf("语音留言 %d", len(stored.Voicemail.Items)+1)
+		}
+	}
+	item := assistant.VoicemailItem{
+		ID:          id,
+		Name:        name,
+		Text:        text,
+		FileName:    fileName,
+		Voice:       synthCfg.Voice,
+		SpeechRate:  synthCfg.SpeechRate,
+		Style:       synthCfg.Style,
+		DurationSec: dur,
+		CreatedAt:   now,
+	}
+
+	if replaceIdx >= 0 {
+		old := stored.Voicemail.Items[replaceIdx]
+		if old.FileName != "" && old.FileName != fileName {
+			_ = os.Remove(filepath.Join(s.VoicemailDir, filepath.Base(old.FileName)))
+		}
+		stored.Voicemail.Items[replaceIdx] = item
+	} else {
+		stored.Voicemail.Items = append(stored.Voicemail.Items, item)
+	}
+	stored.Voicemail.ActiveID = item.ID
+	stored.Voicemail.Text = text
+	stored.Voicemail.Voice = synthCfg.Voice
+	stored.Voicemail.SpeechRate = synthCfg.SpeechRate
+	stored.Voicemail.Style = synthCfg.Style
+	stored.Voicemail.RingDelaySec = cfg.Voicemail.RingDelaySec
+	stored.Normalize()
+
+	if err := s.Settings.SetAssistant(r.Context(), stored, nil); err != nil {
+		s.serverError(w, err)
+		return
+	}
+	s.Devices.Note(r.Context(), "info", fmt.Sprintf("已生成语音留言「%s」（%.1f 秒，保存至 data/voicemail/%s）", item.Name, dur, fileName))
+	writeJSON(w, http.StatusOK, s.assistantSettings(r, stored))
+}
+
+func (s *Server) patchVoicemailItem(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	var req struct {
+		Name   string `json:"name"`
+		Active bool   `json:"active"`
+	}
+	if !decode(w, r, &req) {
+		return
+	}
+	stored, err := s.Settings.Assistant(r.Context())
+	if err != nil {
+		s.serverError(w, err)
+		return
+	}
+	found := false
+	for i := range stored.Voicemail.Items {
+		if stored.Voicemail.Items[i].ID == id {
+			found = true
+			if n := strings.TrimSpace(req.Name); n != "" {
+				stored.Voicemail.Items[i].Name = n
+			}
+			break
+		}
+	}
+	if !found {
+		writeError(w, http.StatusNotFound, "未找到该段语音留言")
+		return
+	}
+	if req.Active {
+		stored.Voicemail.ActiveID = id
+	}
+	stored.Normalize()
+	if err := s.Settings.SetAssistant(r.Context(), stored, nil); err != nil {
+		s.serverError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, s.assistantSettings(r, stored))
+}
+
+func (s *Server) deleteVoicemailItem(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	stored, err := s.Settings.Assistant(r.Context())
+	if err != nil {
+		s.serverError(w, err)
+		return
+	}
+	idx := -1
+	for i, it := range stored.Voicemail.Items {
+		if it.ID == id {
+			idx = i
+			break
+		}
+	}
+	if idx < 0 {
+		writeError(w, http.StatusNotFound, "未找到该段语音留言")
+		return
+	}
+	removed := stored.Voicemail.Items[idx]
+	stored.Voicemail.Items = append(stored.Voicemail.Items[:idx], stored.Voicemail.Items[idx+1:]...)
+	if removed.FileName != "" {
+		_ = os.Remove(filepath.Join(s.VoicemailDir, filepath.Base(removed.FileName)))
+	}
+	stored.Normalize()
+	if err := s.Settings.SetAssistant(r.Context(), stored, nil); err != nil {
+		s.serverError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, s.assistantSettings(r, stored))
+}
+
+func (s *Server) voicemailAudio(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	stored, err := s.Settings.Assistant(r.Context())
+	if err != nil {
+		s.serverError(w, err)
+		return
+	}
+	var fileName string
+	for _, it := range stored.Voicemail.Items {
+		if it.ID == id {
+			fileName = it.FileName
+			break
+		}
+	}
+	if fileName == "" {
+		http.NotFound(w, r)
+		return
+	}
+	path := filepath.Join(s.VoicemailDir, filepath.Base(fileName))
+	w.Header().Set("Content-Type", "audio/wav")
+	http.ServeFile(w, r, path)
+}
+
 // rawJSON passes a stored JSON note through, or null.
 func rawJSON(text string) json.RawMessage {
 	if text == "" || !json.Valid([]byte(text)) {
@@ -206,6 +454,10 @@ func (s *Server) routeAssistant(authed func(string, http.HandlerFunc)) {
 	authed("GET /api/settings/assistant", s.getAssistant)
 	authed("PUT /api/settings/assistant", s.putAssistant)
 	authed("POST /api/settings/assistant/test", s.testAssistant)
+	authed("POST /api/settings/assistant/voicemail/generate", s.generateVoicemail)
+	authed("PATCH /api/settings/assistant/voicemail/{id}", s.patchVoicemailItem)
+	authed("DELETE /api/settings/assistant/voicemail/{id}", s.deleteVoicemailItem)
+	authed("GET /api/settings/assistant/voicemail/{id}/audio", s.voicemailAudio)
 	authed("POST /api/devices/{id}/call/assistant", s.callAction((*service.Service).AnswerWithAssistant))
 	authed("POST /api/devices/{id}/call/assistant/skip", s.callAction((*service.Service).SkipAssistant))
 	authed("POST /api/devices/{id}/call/takeover", s.callAction((*service.Service).TakeOver))

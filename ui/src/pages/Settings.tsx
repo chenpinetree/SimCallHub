@@ -47,7 +47,7 @@ export function SettingsPage() {
   const { data: classifier } = useQuery({ queryKey: ["classifier"], queryFn: () => api.get<ClassifierSettings>("/api/settings/classifier") });
   const state: Partial<Record<Tab, boolean | undefined>> = {
     notify: notify && activeChannels(notify) > 0,
-    assistant: assistant?.enabled,
+    assistant: assistant?.enabled || assistant?.voicemail?.enabled,
     sip: sipSettings?.clients && sipSettings.clients.length > 0,
     classifier: classifier?.enabled,
   };

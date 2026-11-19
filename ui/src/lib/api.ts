@@ -135,6 +135,29 @@ export interface CallSummary {
   usage?: { inputTokens: number; outputTokens: number };
 }
 
+export interface VoicemailItem {
+  id: string;
+  name: string;
+  text: string;
+  fileName: string;
+  voice: string;
+  speechRate: number;
+  style: "warm" | "formal" | "brief";
+  durationSec: number;
+  createdAt: string;
+}
+
+export interface VoicemailConfig {
+  enabled: boolean;
+  ringDelaySec: number;
+  voice: string;
+  speechRate: number;
+  style: "warm" | "formal" | "brief";
+  text: string;
+  activeId: string;
+  items: VoicemailItem[];
+}
+
 export interface AssistantConfig {
   enabled: boolean;
   ringDelaySec: number;
@@ -153,6 +176,7 @@ export interface AssistantConfig {
   maxTurns: number;
   record: "off" | "assistant" | "all";
   keepDays: number;
+  voicemail: VoicemailConfig;
 }
 
 export interface AssistantSettings extends AssistantConfig {
