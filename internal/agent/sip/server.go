@@ -41,7 +41,7 @@ func DefaultConfig() Config {
 	}
 }
 
-// Server provides the SIP VoIP extension gateway for haobot.
+// Server provides the SIP VoIP extension gateway for SimCallHub.
 type Server struct {
 	cfg       Config
 	devices   *service.Manager
@@ -665,7 +665,7 @@ func (s *Server) ringExtensions(event service.CallEvent) {
 		_ = s.send(invite, ext.Addr)
 	}
 
-	// Ring timeout watchdog: if not answered within RingTimeout, cancel INVITE so haobot AI can take over
+	// Ring timeout watchdog: if not answered within RingTimeout, cancel INVITE so SimCallHub AI can take over
 	go func() {
 		select {
 		case <-time.After(time.Duration(s.cfg.RingTimeout) * time.Second):

@@ -12,7 +12,7 @@ AGENT := ./cmd/simcallhub
 ui:
 	cd ui && pnpm install --frozen-lockfile && pnpm build
 
-# UI dev server with hot reload; proxies /api to an agent on 127.0.0.1:9081 (or $$HAOBOT_PORT).
+# UI dev server with hot reload; proxies /api to an agent on 127.0.0.1:9081 (or $$SIMCALLHUB_PORT).
 ui-dev:
 	cd ui && pnpm dev
 

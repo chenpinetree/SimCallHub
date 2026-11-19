@@ -32,8 +32,8 @@ function save(key: string, value: string) {
 }
 
 export function PrefsProvider({ children }: { children: ReactNode }) {
-  const [mode, setModeState] = useState<Mode>(() => load("haobot.mode", "simple", ["simple", "pro"] as const));
-  const [theme, setThemeState] = useState<Theme>(() => load("haobot.theme", "system", ["system", "dark", "light"] as const));
+  const [mode, setModeState] = useState<Mode>(() => load("simcallhub.mode", "simple", ["simple", "pro"] as const));
+  const [theme, setThemeState] = useState<Theme>(() => load("simcallhub.theme", "system", ["system", "dark", "light"] as const));
 
   useEffect(() => {
     const media = window.matchMedia("(prefers-color-scheme: dark)");
@@ -51,12 +51,12 @@ export function PrefsProvider({ children }: { children: ReactNode }) {
     pro: mode === "pro",
     setMode: (m) => {
       setModeState(m);
-      save("haobot.mode", m);
+      save("simcallhub.mode", m);
     },
     theme,
     setTheme: (t) => {
       setThemeState(t);
-      save("haobot.theme", t);
+      save("simcallhub.theme", t);
     },
   };
   return <PrefsContext.Provider value={value}>{children}</PrefsContext.Provider>;

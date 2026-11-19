@@ -65,7 +65,7 @@ export function PinProtectionNote() {
         <ShieldCheck className="size-3.5" /> 防锁卡保护
       </p>
       <p>· 只有 PIN 剩余次数为满额 3 次时才会自动尝试；失败一次就停止，直到你手动解锁或更新 PIN。</p>
-      <p>· 命令行参数 -sim-pin-file / -sim-pin-keychain 或环境变量 HAOBOT_SIM_PIN 对所有设备生效，并优先于这里的设置。</p>
+      <p>· 命令行参数 -sim-pin-file / -sim-pin-keychain 或环境变量 SIMCALLHUB_SIM_PIN 对所有设备生效，并优先于这里的设置。</p>
     </div>
   );
 }

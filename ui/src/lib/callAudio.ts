@@ -49,7 +49,7 @@ function micError(e: unknown): string {
   return "无法打开麦克风，当前只能听不能说";
 }
 
-const inputKey = "haobot.mic";
+const inputKey = "simcallhub.mic";
 
 // The microphone chosen on the 电话 page; "" means the system default.
 export function preferredInput(): string {

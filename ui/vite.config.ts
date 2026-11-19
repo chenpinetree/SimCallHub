@@ -7,7 +7,7 @@ import tailwindcss from "@tailwindcss/vite";
 declare const process: { env: Record<string, string | undefined> };
 
 // The build lands in the Go package that embeds it; `pnpm dev` proxies the
-// API to an agent running locally, on :9081 unless HAOBOT_PORT says otherwise.
+// API to an agent running locally, on :9081 unless SIMCALLHUB_PORT says otherwise.
 export default defineConfig({
   plugins: [react(), tailwindcss()],
   build: {
@@ -16,6 +16,6 @@ export default defineConfig({
     chunkSizeWarningLimit: 800,
   },
   server: {
-    proxy: { "/api": { target: `https://127.0.0.1:${process.env.HAOBOT_PORT || 9081}`, changeOrigin: false, ws: true, secure: false } },
+    proxy: { "/api": { target: `https://127.0.0.1:${process.env.SIMCALLHUB_PORT || 9081}`, changeOrigin: false, ws: true, secure: false } },
   },
 });

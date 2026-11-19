@@ -12,7 +12,7 @@ import (
 )
 
 // newLauncher finds the data directory as serve would: -data in args,
-// then HAOBOT_DATA, then ~/.haobot.
+// then SIMCALLHUB_DATA, then ~/.simcallhub.
 func newLauncher(args []string) (launcher.Launcher, error) {
 	self, err := os.Executable()
 	if err == nil {
@@ -46,7 +46,7 @@ func runStart(args []string) error {
   simcallhub status          查看是否在运行
   simcallhub stop            停止
 
-日志在数据目录的 haobot.log。用了 -data 的话，stop 和 status 也要带上同样的 -data。
+日志在数据目录的 simcallhub.log。用了 -data 的话，stop 和 status 也要带上同样的 -data。
 `)
 		return nil
 	}

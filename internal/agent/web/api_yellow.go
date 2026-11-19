@@ -298,7 +298,7 @@ type yellowFile struct {
 	Orgs       []orgRequest `json:"orgs"`
 }
 
-const yellowFormat = "haobot-yellowpages/1"
+const yellowFormat = "simcallhub-yellowpages/1"
 
 func (s *Server) exportYellow(w http.ResponseWriter, r *http.Request) {
 	p := s.Phonebook.Pages()

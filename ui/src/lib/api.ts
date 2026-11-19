@@ -26,7 +26,7 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
   const data = text ? JSON.parse(text) : {};
   if (!resp.ok) {
     if (resp.status === 401 && path !== "/api/login") {
-      window.dispatchEvent(new Event("haobot:unauthorized"));
+      window.dispatchEvent(new Event("simcallhub:unauthorized"));
     }
     throw new ApiError(resp.status, data.error ?? `请求失败（${resp.status}）`, data.code);
   }

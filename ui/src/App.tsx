@@ -23,8 +23,8 @@ export function App() {
   // Any 401 (expired session, password changed elsewhere) returns to login.
   useEffect(() => {
     const onUnauthorized = () => qc.setQueryData(["session"], { authenticated: false });
-    window.addEventListener("haobot:unauthorized", onUnauthorized);
-    return () => window.removeEventListener("haobot:unauthorized", onUnauthorized);
+    window.addEventListener("simcallhub:unauthorized", onUnauthorized);
+    return () => window.removeEventListener("simcallhub:unauthorized", onUnauthorized);
   }, [qc]);
 
   if (session.isPending) {
