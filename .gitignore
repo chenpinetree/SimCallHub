@@ -15,7 +15,7 @@ ui/node_modules/
 *.pem
 *.wav
 *.pcm
-haobot-backup-*.tar.gz
+simcallhub-backup-*.tar.gz
 
 # Editors and OS
 .DS_Store

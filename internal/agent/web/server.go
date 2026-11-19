@@ -30,7 +30,7 @@ import (
 var dist embed.FS
 
 const (
-	sessionCookie = "haobot_session"
+	sessionCookie = "simcallhub_session"
 	// Logins are kept as long as browsers allow: Chrome caps cookie lifetime
 	// at 400 days. The session is extended (at most once per
 	// sessionRenewEvery) whenever the UI is used, so only 400 days without

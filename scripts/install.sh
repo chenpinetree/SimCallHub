@@ -14,7 +14,7 @@
 set -eu
 
 repo=chenpinetree/SimCallHub
-mirror=${SIMCALLHUB_MIRROR:-${HAOBOT_MIRROR:-}}
+mirror=${SIMCALLHUB_MIRROR:-}
 
 say() { printf '%s\n' "$*" >&2; }
 fail() {
@@ -36,7 +36,7 @@ esac
 command -v curl >/dev/null || fail "需要 curl"
 command -v tar >/dev/null || fail "需要 tar"
 
-version=${SIMCALLHUB_VERSION:-${HAOBOT_VERSION:-}}
+version=${SIMCALLHUB_VERSION:-}
 if [ -z "$version" ]; then
 	# The latest release page redirects to its tag.
 	version=$(curl -fsSLI -o /dev/null -w '%{url_effective}' "https://github.com/$repo/releases/latest" | sed 's#.*/tag/##')
@@ -67,7 +67,7 @@ tar -xzf "$tmp/$name.tar.gz" -C "$tmp"
 agent=$tmp/$name/simcallhub
 
 # Where to put it: a directory already on the PATH when we may write there.
-dir=${SIMCALLHUB_BIN:-${HAOBOT_BIN:-}}
+dir=${SIMCALLHUB_BIN:-}
 if [ -z "$dir" ]; then
 	if [ -w /usr/local/bin ]; then
 		dir=/usr/local/bin

@@ -21,7 +21,7 @@ const (
 	// mmsChunks is how many file reads one operation does, so a call
 	// arriving meanwhile is noticed within a second or two.
 	mmsChunks = 16
-	mmsFile   = "UFS:haobot_mms.bin"
+	mmsFile   = "UFS:simcallhub_mms.bin"
 )
 
 // DownloadMMS fetches an MMS's content from the carrier's MMSC through the

@@ -26,15 +26,15 @@ import (
 
 // Files in the data directory.
 const (
-	pidFile  = "haobot.pid"
-	logFile  = "haobot.log"
+	pidFile  = "simcallhub.pid"
+	logFile  = "simcallhub.log"
 	argsFile = "start.json" // the serve options start was last given
 )
 
 //go:embed *.tmpl
 var files embed.FS
 
-var rules = template.Must(template.ParseFS(files, "99-haobot.rules.tmpl"))
+var rules = template.Must(template.ParseFS(files, "99-simcallhub.rules.tmpl"))
 
 // UdevRules lets plugdev open and reset every recognised modem on Linux,
 // and keeps ModemManager away from them.

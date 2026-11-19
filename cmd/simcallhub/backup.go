@@ -30,7 +30,7 @@ const recordingsDir = "recordings"
 func runBackup(args []string) error {
 	flags := flag.NewFlagSet("backup", flag.ExitOnError)
 	dataDir := registerDataDir(flags)
-	out := flags.String("o", "haobot-backup-"+time.Now().Format("20060102-150405")+".tar.gz", "备份文件")
+	out := flags.String("o", "simcallhub-backup-"+time.Now().Format("20060102-150405")+".tar.gz", "备份文件")
 	flags.Parse(args)
 
 	if !exists(filepath.Join(*dataDir, dbName)) {
@@ -41,7 +41,7 @@ func runBackup(args []string) error {
 		return err
 	}
 	defer st.Close()
-	tmp, err := os.MkdirTemp("", "haobot-backup-")
+	tmp, err := os.MkdirTemp("", "simcallhub-backup-")
 	if err != nil {
 		return err
 	}
@@ -155,7 +155,7 @@ func runRestore(args []string) error {
 	defer f.Close()
 	gz, err := gzip.NewReader(f)
 	if err != nil {
-		return fmt.Errorf("不是 haobot 备份文件：%w", err)
+		return fmt.Errorf("不是 SimCallHub 备份文件：%w", err)
 	}
 	// Unpack beside the data first, so a broken backup changes nothing.
 	if err := os.MkdirAll(*dataDir, 0o700); err != nil {

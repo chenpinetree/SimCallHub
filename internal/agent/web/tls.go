@@ -125,7 +125,7 @@ func newCert(names []string, ips []net.IP) (certPEM, keyPEM []byte, err error) {
 	now := time.Now()
 	tmpl := &x509.Certificate{
 		SerialNumber:          serial,
-		Subject:               pkix.Name{CommonName: "SIMs Manager haobot", Organization: []string{"haobot"}},
+		Subject:               pkix.Name{CommonName: "SIMs Manager SimCallHub", Organization: []string{"SimCallHub"}},
 		NotBefore:             now.Add(-time.Hour),
 		NotAfter:              now.Add(certLifetime),
 		KeyUsage:              x509.KeyUsageDigitalSignature,

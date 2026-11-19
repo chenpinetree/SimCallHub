@@ -220,14 +220,14 @@ func hexFlag(target *uint16) func(string) error {
 }
 
 const (
-	dbName = "haobot.db"
+	dbName = "simcallhub.db"
 	// secretKeyName holds the key that encrypts the saved SIM PIN and API key.
 	secretKeyName    = "secret.key"
-	defaultKeychain  = "haobot-pin"
-	currentEnvPrefix = "HAOBOT_"
+	defaultKeychain  = "simcallhub-pin"
+	currentEnvPrefix = "SIMCALLHUB_"
 )
 
-// getenv reads HAOBOT_<name>.
+// getenv reads SIMCALLHUB_<name>.
 func getenv(name string) string { return os.Getenv(currentEnvPrefix + name) }
 
 func defaultDataDir() string {
@@ -238,7 +238,7 @@ func defaultDataDir() string {
 	if err != nil {
 		return "data"
 	}
-	return filepath.Join(home, ".haobot")
+	return filepath.Join(home, ".simcallhub")
 }
 
 func openStore(dataDir string) (*store.Store, error) {
@@ -257,8 +257,8 @@ func runServe(args []string) error {
 	fs := flag.NewFlagSet("serve", flag.ExitOnError)
 	dataDir := registerDataDir(fs)
 	conn := registerTransport(fs)
-	listen := fs.String("listen", cmp.Or(getenv("LISTEN"), "127.0.0.1"), "Web 监听的地址；局域网访问设为 0.0.0.0。也可以连端口一起写，如 0.0.0.0:9081（环境变量 HAOBOT_LISTEN）")
-	port := fs.Int("port", defaultPort(), "Web 端口（环境变量 HAOBOT_PORT）")
+	listen := fs.String("listen", cmp.Or(getenv("LISTEN"), "127.0.0.1"), "Web 监听的地址；局域网访问设为 0.0.0.0。也可以连端口一起写，如 0.0.0.0:9081（环境变量 SIMCALLHUB_LISTEN）")
+	port := fs.Int("port", defaultPort(), "Web 端口（环境变量 SIMCALLHUB_PORT）")
 	storage := fs.String("storage", "ME", "新短信的接收存储：ME（模组）或 SM（SIM 卡）")
 	scan := fs.String("scan-storages", "ME,SM", "每次同步读取的存储，逗号分隔")
 	deleteAfterSave := fs.Bool("delete-after-save", true, "短信入库后从模组/SIM 卡中删除；-delete-after-save=false 保留")

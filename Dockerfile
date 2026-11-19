@@ -13,7 +13,7 @@ RUN apt-get update \
 
 WORKDIR /src
 COPY . .
-ARG VERSION=v1.2.0
+ARG VERSION=v1.2.1
 RUN go build -trimpath -ldflags "-s -w -X main.version=${VERSION}" -o /out/simcallhub ./cmd/simcallhub
 
 # ---------- 运行阶段 ----------
@@ -24,11 +24,10 @@ RUN apt-get update \
  && rm -rf /var/lib/apt/lists/*
 
 COPY --from=build /out/simcallhub /usr/local/bin/simcallhub
-RUN ln -sf /usr/local/bin/simcallhub /usr/local/bin/haobot-agent
 
 ENV TZ=Asia/Shanghai \
-    HAOBOT_DATA=/data \
-    HAOBOT_PORT=9081 \
+    SIMCALLHUB_DATA=/data \
+    SIMCALLHUB_PORT=9081 \
     SIM_SIP_LISTEN=0.0.0.0:5060 \
     SIM_SIP_USER=1001 \
     SIM_SIP_PASS=12345678

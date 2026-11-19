@@ -14,7 +14,7 @@ services:
       - ./data:/data
     environment:
       - TZ=Asia/Shanghai
-      - HAOBOT_DATA=/data
+      - SIMCALLHUB_DATA=/data
       - SIM_SIP_USER=1001          # SIP 分机号
       - SIM_SIP_PASS=12345678      # SIP 分机密码
       - SIM_SIP_LISTEN=0.0.0.0:5060
