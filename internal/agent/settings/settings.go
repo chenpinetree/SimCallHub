@@ -30,7 +30,8 @@ const (
 	// keyNotifyRules holds what is pushed. Before there were several
 	// channels the rules were part of keyTelegram, and are read from there
 	// until saved.
-	keyNotifyRules = "notify.rules"
+	keyNotifyRules     = "notify.rules"
+	keyNotifyRingingV1 = "notify.ringing_v1"
 )
 
 // webhookKeys are where a group-bot channel's settings, URL and secret live.
@@ -271,6 +272,14 @@ func (s *Settings) Notify(ctx context.Context) (notify.Config, error) {
 			return cfg, err
 		}
 	}
+	if mig, err := s.store.Setting(ctx, keyNotifyRingingV1); err == nil && mig == "" {
+		cfg.Rules.Ringing = true
+		cfg.Rules.RingingRepeat = true
+		if found {
+			_ = s.setJSON(ctx, keyNotifyRules, cfg.Rules)
+		}
+		_ = s.store.SetSetting(ctx, keyNotifyRingingV1, "1")
+	}
 	if cfg.Rules.SkipCategories == nil {
 		cfg.Rules.SkipCategories = []string{}
 	}
@@ -321,6 +330,7 @@ func (s *Settings) SetNotifyRules(ctx context.Context, rules notify.Rules) error
 	if err := s.setJSON(ctx, keyNotifyRules, rules); err != nil {
 		return err
 	}
+	_ = s.store.SetSetting(ctx, keyNotifyRingingV1, "1")
 	s.push = nil
 	return nil
 }

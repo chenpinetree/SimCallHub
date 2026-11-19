@@ -19,9 +19,10 @@ type Rules struct {
 	// later is pushed until the user unticks it. Unclassified covers SMS
 	// that have no category when they are pushed.
 	SkipCategories []string `json:"skipCategories"`
-	Ringing        bool     `json:"ringing"`   // a call is ringing
-	Missed         bool     `json:"missed"`    // missed calls
-	Summaries      bool     `json:"summaries"` // the assistant's call notes
+	Ringing        bool     `json:"ringing"`       // a call is ringing
+	RingingRepeat  bool     `json:"ringingRepeat"` // repeat ringing push every 2s until answered or hung up
+	Missed         bool     `json:"missed"`        // missed calls
+	Summaries      bool     `json:"summaries"`     // the assistant's call notes
 	// SkipCallCategories are kinds of call (see assistant.CallCategories)
 	// whose notes are not pushed; Unclassified covers notes without one,
 	// such as a failed summary.
@@ -33,7 +34,7 @@ type Rules struct {
 
 // DefaultRules is used until the user saves rules.
 func DefaultRules() Rules {
-	return Rules{SMS: true, Missed: true, Summaries: true, SkipCategories: []string{}, SkipCallCategories: []string{}}
+	return Rules{SMS: true, Ringing: true, RingingRepeat: true, Missed: true, Summaries: true, SkipCategories: []string{}, SkipCallCategories: []string{}}
 }
 
 // wantsSummary reports whether the assistant's note on a call of this

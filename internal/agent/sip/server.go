@@ -583,7 +583,9 @@ func (s *Server) NotifyCallEvent(event service.CallEvent) {
 	}
 
 	if event.Kind == service.CallEventRinging && event.Record.Direction == "in" {
-		s.ringExtensions(event)
+		if !event.Repeat {
+			s.ringExtensions(event)
+		}
 	} else if event.Kind == service.CallEventMissed {
 		// Cancel any active ringing sessions for this call
 		s.sessMu.Lock()

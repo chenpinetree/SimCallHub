@@ -420,15 +420,98 @@ function RulesCard({ data }: { data: NotifySettings }) {
       <CardBody className="space-y-5">
         {none && (
           <Alert tone="warn" title="还没有开启推送渠道">
-            先在上面设置好一个渠道并打开开关，这里选的内容才会推送给你。
+            来电推送与短信推送的设置，只有打开和设置好上方“推送渠道”里面的其中一个才会生效。
           </Alert>
         )}
 
         <div className="space-y-3">
-          <div className="text-[13px] font-medium">电话</div>
-          <div className="grid gap-2 sm:grid-cols-3">
-            <Toggle icon={PhoneCall} label="来电提醒" hint="电话一响就推送" checked={form.ringing} onChange={(v) => set({ ringing: v })} />
-            <Toggle icon={PhoneMissed} label="未接来电" checked={form.missed} onChange={(v) => set({ missed: v })} />
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex items-center gap-2 text-[13px] font-medium">
+              <PhoneCall className="size-4 text-muted" />
+              来电推送
+            </div>
+            <Switch checked={form.ringing} onChange={(v) => set({ ringing: v })} label="来电推送" />
+          </div>
+          {form.ringing ? (
+            <div className="space-y-3 rounded-2xl bg-panel-2/50 p-3.5 ring-1 ring-line">
+              <div className="text-xs text-muted">选择来电提醒推送方式：</div>
+              <div className="grid gap-2.5 sm:grid-cols-2">
+                <button
+                  type="button"
+                  role="radio"
+                  aria-checked={!form.ringingRepeat}
+                  onClick={() => set({ ringingRepeat: false })}
+                  className={clsx(
+                    "flex items-start gap-3 rounded-xl px-3.5 py-3 text-left ring-1 transition",
+                    !form.ringingRepeat ? "bg-accent/8 ring-accent/40" : "bg-panel-solid ring-line hover:ring-line-strong",
+                  )}
+                >
+                  <span
+                    className={clsx(
+                      "mt-0.5 flex size-[18px] shrink-0 items-center justify-center rounded-full ring-1 transition",
+                      !form.ringingRepeat ? "bg-gradient-accent text-white ring-transparent" : "bg-panel-2 ring-line-strong",
+                    )}
+                  >
+                    {!form.ringingRepeat && <Check className="size-3" strokeWidth={3} />}
+                  </span>
+                  <span className="min-w-0">
+                    <span className={clsx("block text-sm font-medium", form.ringingRepeat && "text-muted")}>
+                      如果有来电只推送一次提醒
+                    </span>
+                    <span className="mt-0.5 block text-[11px] text-subtle">
+                      当有来电呼入时，仅在电话刚响铃时发送一次来电推送提醒
+                    </span>
+                  </span>
+                </button>
+
+                <button
+                  type="button"
+                  role="radio"
+                  aria-checked={!!form.ringingRepeat}
+                  onClick={() => set({ ringingRepeat: true })}
+                  className={clsx(
+                    "flex items-start gap-3 rounded-xl px-3.5 py-3 text-left ring-1 transition",
+                    form.ringingRepeat ? "bg-accent/8 ring-accent/40" : "bg-panel-solid ring-line hover:ring-line-strong",
+                  )}
+                >
+                  <span
+                    className={clsx(
+                      "mt-0.5 flex size-[18px] shrink-0 items-center justify-center rounded-full ring-1 transition",
+                      form.ringingRepeat ? "bg-gradient-accent text-white ring-transparent" : "bg-panel-2 ring-line-strong",
+                    )}
+                  >
+                    {form.ringingRepeat && <Check className="size-3" strokeWidth={3} />}
+                  </span>
+                  <span className="min-w-0">
+                    <span className={clsx("block text-sm font-medium", !form.ringingRepeat && "text-muted")}>
+                      来电每 2 秒持续推送提醒
+                    </span>
+                    <span className="mt-0.5 block text-[11px] text-subtle">
+                      持续每 2 秒推送一次直到我方接听来电，或者因为没有接听来电直到对方挂掉
+                    </span>
+                  </span>
+                </button>
+              </div>
+              <p className="flex items-start gap-1.5 text-[11px] text-warn">
+                <AlertTriangle className="mt-px size-3.5 shrink-0" />
+                <span>提醒：来电推送的设置只有打开和设置好“推送渠道”里面的其中一个才会生效。</span>
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-2 rounded-xl bg-panel-2 px-3 py-2.5 text-xs text-muted ring-1 ring-line">
+              <p>已关闭来电提醒推送，来电响铃时不会发送推送通知。</p>
+              <p className="flex items-start gap-1.5 text-[11px] text-warn">
+                <AlertTriangle className="mt-px size-3.5 shrink-0" />
+                <span>提醒：来电推送的设置只有打开和设置好“推送渠道”里面的其中一个才会生效。</span>
+              </p>
+            </div>
+          )}
+        </div>
+
+        <div className="space-y-3">
+          <div className="text-[13px] font-medium">未接来电与 AI 接听</div>
+          <div className="grid gap-2 sm:grid-cols-2">
+            <Toggle icon={PhoneMissed} label="未接来电" hint="对方挂断且未接听时推送" checked={form.missed} onChange={(v) => set({ missed: v })} />
             <Toggle icon={Bot} label="AI 接听小结" hint="来电者、来意、是否回电" checked={form.summaries} onChange={(v) => set({ summaries: v })} />
           </div>
           {form.summaries && (

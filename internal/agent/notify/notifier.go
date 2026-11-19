@@ -1,6 +1,7 @@
 package notify
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -132,12 +133,18 @@ func retryable(err error, attempt int) (time.Duration, bool) {
 func (n *Notifier) deliver(ctx context.Context, kind Kind, note Note) {
 	var err error
 	for attempt := 0; ; attempt++ {
+		if note.expired() {
+			return
+		}
 		cfg, cerr := n.Config(ctx)
 		if cerr != nil || !cfg.Ready(kind) {
 			return // turned off meanwhile
 		}
 		if err = n.Send(ctx, kind, cfg, note); err == nil {
 			n.setFailing(ctx, kind, nil)
+			return
+		}
+		if note.expired() {
 			return
 		}
 		wait, ok := retryable(err, attempt)
@@ -149,6 +156,8 @@ func (n *Notifier) deliver(ctx context.Context, kind Kind, note Note) {
 		}
 		select {
 		case <-ctx.Done():
+			return
+		case <-note.Done:
 			return
 		case <-time.After(wait):
 		}
@@ -226,6 +235,9 @@ func (n *Notifier) Call(e service.CallEvent) {
 		if !cfg.Rules.Ringing {
 			return
 		}
+		if e.Repeat && !cfg.Rules.RingingRepeat {
+			return
+		}
 	case service.CallEventMissed:
 		if !cfg.Rules.Missed {
 			return
@@ -239,7 +251,7 @@ func (n *Notifier) Call(e service.CallEvent) {
 	default:
 		return
 	}
-	n.enqueue(cfg, CallNote(e, n.name(e.Record.Peer)))
+	n.enqueue(cfg, CallNote(e, n.name(cmp.Or(e.Record.Peer, e.Record.Number))))
 }
 
 func (n *Notifier) name(number string) string {
