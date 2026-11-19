@@ -328,6 +328,7 @@ func runServe(args []string) error {
 	}
 	var worker *classify.Worker
 	recordings := filepath.Join(*dataDir, "recordings")
+	voicemails := filepath.Join(*dataDir, "voicemail")
 	client := classify.NewClient()
 	book := &phonebook.Book{Store: st}
 	if err := book.Reload(ctx); err != nil {
@@ -340,7 +341,7 @@ func runServe(args []string) error {
 			return err == nil && cfg.Ready() && worker.ModelUp()
 		},
 	}
-	aide := &assistant.Agent{Config: conf.Assistant, LLM: conf.LLM, Client: client, Log: log, Answered: st.CountAssistantCalls}
+	aide := &assistant.Agent{Config: conf.Assistant, LLM: conf.LLM, Client: client, Log: log, Answered: st.CountAssistantCalls, VoicemailDir: voicemails}
 	var sipSrv *sip.Server
 	sipCfg := sip.Config{
 		Enabled:      *sipEnable,
@@ -415,7 +416,7 @@ func runServe(args []string) error {
 	notifier.Note = devices.Note
 	srv, err := web.New(web.Deps{
 		Store: st, Devices: devices, Settings: conf, Worker: worker, Client: client, Assistant: aide,
-		RecordingDir: recordings, Notifier: notifier, Phonebook: book, SIP: sipSrv,
+		RecordingDir: recordings, VoicemailDir: voicemails, Notifier: notifier, Phonebook: book, SIP: sipSrv,
 		Log: log, SecureCookie: *secureCookie || *useTLS,
 	})
 	if err != nil {

@@ -725,3 +725,85 @@ func TestDoubaoTalk(t *testing.T) {
 		t.Error("call was not hung up after end_call")
 	}
 }
+
+func TestVoicemailValidationAndSynthesize(t *testing.T) {
+	// 1. Mutual exclusion between AI Assistant and Voicemail.
+	cfg := DefaultConfig()
+	cfg.Enabled = true
+	cfg.Voicemail.Enabled = true
+	cfg.Record = RecordAll
+	if err := cfg.Validate(); err == nil || !strings.Contains(err.Error(), "冲突") {
+		t.Fatalf("expected conflict error when both Enabled and Voicemail.Enabled are true, got: %v", err)
+	}
+
+	// 2. Voicemail requires Record == RecordAll ("录下所有通话").
+	cfg.Enabled = false
+	cfg.Voicemail.Enabled = true
+	cfg.Record = RecordAssistant
+	if err := cfg.Validate(); err == nil || !strings.Contains(err.Error(), "录下所有通话") {
+		t.Fatalf("expected RecordAll error when Voicemail.Enabled is true and Record=%q, got: %v", cfg.Record, err)
+	}
+	cfg.Record = RecordAll
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("expected valid config when Voicemail.Enabled=true and Record=RecordAll, got: %v", err)
+	}
+
+	// 3. Max 3 voicemail items limit.
+	cfg.Voicemail.Items = make([]VoicemailItem, 4)
+	if err := cfg.Validate(); err == nil || !strings.Contains(err.Error(), "3") {
+		t.Fatalf("expected max 3 items error, got: %v", err)
+	}
+
+	// 4. Synthesize WAV via Doubao realtime endpoint.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ws, err := websocket.Accept(w, r, nil)
+		if err != nil {
+			return
+		}
+		defer ws.CloseNow()
+		ctx := r.Context()
+		send := func(e map[string]any) {
+			data, _ := json.Marshal(e)
+			ws.Write(ctx, websocket.MessageText, data)
+		}
+		for {
+			_, data, err := ws.Read(ctx)
+			if err != nil {
+				return
+			}
+			var e map[string]any
+			json.Unmarshal(data, &e)
+			switch e["type"] {
+			case "session.create":
+				send(map[string]any{"type": "session.created"})
+			case "speech_text_buffer.commit":
+				send(map[string]any{"type": "response.output_audio.started"})
+				send(map[string]any{
+					"type":  "response.output_audio.delta",
+					"delta": base64.StdEncoding.EncodeToString(sine(24000, 440, 500*time.Millisecond, 8000)),
+				})
+				send(map[string]any{"type": "response.output_audio.done"})
+				send(map[string]any{"type": "response.done"})
+			}
+		}
+	}))
+	defer srv.Close()
+
+	synthCfg := DefaultConfig()
+	synthCfg.Model = DoubaoDefaultModel
+	synthCfg.Voice = DoubaoDefaultVoice
+	synthCfg.SpeechRate = 1.0
+	synthCfg.Style = StyleFormal
+	ep := "ws" + strings.TrimPrefix(srv.URL, "http")
+	wav, dur, err := Synthesize(context.Background(), synthCfg, ep, "k", "您好，我现在不方便接听电话，请留言。")
+	if err != nil {
+		t.Fatalf("Synthesize failed: %v", err)
+	}
+	if len(wav) <= 44 || string(wav[:4]) != "RIFF" || string(wav[8:12]) != "WAVE" || dur < 0.4 {
+		t.Fatalf("unexpected wav output: len=%d, dur=%.1f", len(wav), dur)
+	}
+	pcm, err := DecodeWAV(wav)
+	if err != nil || len(pcm) != len(wav)-44 {
+		t.Fatalf("DecodeWAV failed: len=%d, err=%v", len(pcm), err)
+	}
+}

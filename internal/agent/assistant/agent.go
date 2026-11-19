@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"os"
 	"regexp"
 	"slices"
 	"strings"
@@ -29,6 +30,8 @@ type Agent struct {
 	Answered func(ctx context.Context, number string, since time.Time) (total, fromNumber int, err error)
 	// Note records an event in the log the UI shows.
 	Note func(ctx context.Context, level, text string)
+	// VoicemailDir is where generated WAV voicemail greetings are stored (data/voicemail).
+	VoicemailDir string
 
 	mu   sync.Mutex
 	warm map[string]*warmup // sessions opened while a call rings, by device
@@ -48,7 +51,29 @@ const warmTTL = 90 * time.Second
 // AnswerAfter implements service.Assistant.
 func (a *Agent) AnswerAfter(ctx context.Context, deviceID, number string) (time.Duration, bool) {
 	cfg, err := a.Config(ctx)
-	if err != nil || !cfg.Enabled {
+	if err != nil {
+		return 0, false
+	}
+	if cfg.Voicemail.Enabled {
+		if err := cfg.Validate(); err != nil {
+			a.note(ctx, "warn", "语音留言没有接听："+err.Error())
+			return 0, false
+		}
+		item := cfg.Voicemail.ActiveItem()
+		if item == nil {
+			a.note(ctx, "warn", "语音留言没有接听：尚未生成或选择启用的语音留言")
+			return 0, false
+		}
+		if path := a.voicemailPath(item); path == "" {
+			a.note(ctx, "warn", "语音留言没有接听：语音留言目录未配置")
+			return 0, false
+		} else if _, err := os.Stat(path); err != nil {
+			a.note(ctx, "warn", "语音留言没有接听：找不到语音文件 "+item.FileName)
+			return 0, false
+		}
+		return cfg.Voicemail.RingDelay(), true
+	}
+	if !cfg.Enabled {
 		return 0, false
 	}
 	// A setup that cannot work would answer the call only to hang up.
@@ -185,6 +210,10 @@ func (a *Agent) Handle(ctx context.Context, call *service.AssistantCall) {
 	cfg, err := a.Config(ctx)
 	if err == nil {
 		err = cfg.Validate()
+	}
+	if err == nil && cfg.Voicemail.Enabled {
+		a.handleVoicemail(ctx, cfg, call)
+		return
 	}
 	var llm classify.Config
 	if err == nil {
