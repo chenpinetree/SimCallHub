@@ -365,6 +365,7 @@ func (s *Service) assistantAnswer(ctx context.Context, m *modem.Modem, t *tracke
 		s.update(func(snap *Snapshot) { snap.Assistant.AnswerAt = time.Time{} })
 		return friendly(err)
 	}
+	t.stopRinging()
 	t.aiAt, t.byAI = time.Time{}, true
 	s.store.SetCallHandler(ctx, t.info.RecordID, store.HandledByAssistant)
 	s.note(ctx, "info", "AI 助手已接听来电："+displayNumber(t.info.Number))

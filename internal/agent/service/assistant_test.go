@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -252,5 +253,70 @@ func TestFailedPickupLeavesCallToOwner(t *testing.T) {
 	waitFor(t, "pickup called off", func() bool { return svc.Snapshot().Assistant.AnswerAt.IsZero() })
 	if len(currentCalls(svc)) != 1 {
 		t.Fatal("the call stopped ringing")
+	}
+}
+
+func TestRingingRepeatsUntilAnsweredOrCallerHangsUp(t *testing.T) {
+	_, agentSide := net.Pipe()
+	var mu sync.Mutex
+	var events []CallEvent
+	svc, _, fake, _ := healthService(t, Options{
+		OpenAudio:          func() (io.ReadWriteCloser, error) { return agentSide, nil },
+		RingNotifyInterval: 100 * time.Millisecond,
+		OnCall: func(ev CallEvent) {
+			mu.Lock()
+			events = append(events, ev)
+			mu.Unlock()
+		},
+	})
+	countRinging := func() int {
+		mu.Lock()
+		defer mu.Unlock()
+		n := 0
+		for _, e := range events {
+			if e.Kind == CallEventRinging {
+				n++
+			}
+		}
+		return n
+	}
+
+	// Case 1: Incoming call rings repeatedly until our side answers.
+	fake.ring(modem.Call{ID: 10, Incoming: true, State: modem.CallIncoming, Number: "13800000011"})
+	waitFor(t, "at least 3 ringing pushes", func() bool { return countRinging() >= 3 })
+	if err := svc.Answer(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	afterAnswer := countRinging()
+	time.Sleep(350 * time.Millisecond)
+	if got := countRinging(); got != afterAnswer {
+		t.Fatalf("ringing pushes continued after answer: before=%d, after=%d", afterAnswer, got)
+	}
+	svc.Hangup(context.Background())
+	waitFor(t, "first call ended", func() bool { return len(currentCalls(svc)) == 0 })
+
+	// Case 2: Incoming call rings repeatedly until caller hangs up unanswered.
+	mu.Lock()
+	events = nil
+	mu.Unlock()
+	fake.ring(modem.Call{ID: 11, Incoming: true, State: modem.CallIncoming, Number: "13800000012"})
+	waitFor(t, "at least 3 ringing pushes for second call", func() bool { return countRinging() >= 3 })
+	// Caller hangs up.
+	fake.set(func(f *healthModem) { f.calls = nil })
+	io.WriteString(fake.device, "\r\nNO CARRIER\r\n")
+	waitFor(t, "missed call event emitted", func() bool {
+		mu.Lock()
+		defer mu.Unlock()
+		for _, e := range events {
+			if e.Kind == CallEventMissed {
+				return true
+			}
+		}
+		return false
+	})
+	afterHangup := countRinging()
+	time.Sleep(350 * time.Millisecond)
+	if got := countRinging(); got != afterHangup {
+		t.Fatalf("ringing pushes continued after caller hung up: before=%d, after=%d", afterHangup, got)
 	}
 }

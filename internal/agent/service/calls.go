@@ -28,6 +28,9 @@ const (
 	idleCallPoll = 3
 	// audioFrame is 20 ms of 8 kHz 16-bit mono PCM, the AT+QPCMV format.
 	audioFrame = 320
+	// defaultRingNotifyInterval is how often an unanswered incoming call
+	// repeats its ringing notification until answered or hung up.
+	defaultRingNotifyInterval = 2 * time.Second
 )
 
 // Call events for notifications.
@@ -42,18 +45,53 @@ type CallEvent struct {
 	Kind       string
 	Record     store.CallRecord
 	DeviceName string
+	Repeat     bool            // true for follow-up ringing pushes after the first one
+	Done       <-chan struct{} // closed once the ringing phase ends
 }
 
 // callEvent passes the current record of a call to Options.OnCall.
 func (s *Service) callEvent(ctx context.Context, kind string, id int64) {
+	s.callEventWithDone(ctx, kind, id, false, nil)
+}
+
+func (s *Service) callEventWithDone(ctx context.Context, kind string, id int64, repeat bool, done <-chan struct{}) {
 	if s.opts.OnCall == nil || id == 0 {
 		return
+	}
+	if done != nil {
+		select {
+		case <-done:
+			return
+		default:
+		}
 	}
 	rec, err := s.store.GetCall(ctx, id)
 	if err != nil {
 		return
 	}
-	s.opts.OnCall(CallEvent{Kind: kind, Record: rec, DeviceName: s.Snapshot().Device.Name})
+	if kind == CallEventRinging && (rec.Status != store.CallRinging || !rec.AnsweredAt.IsZero() || !rec.EndedAt.IsZero()) {
+		return
+	}
+	s.opts.OnCall(CallEvent{Kind: kind, Record: rec, DeviceName: s.Snapshot().Device.Name, Repeat: repeat, Done: done})
+}
+
+func (s *Service) repeatRinging(ctx context.Context, id int64, stop <-chan struct{}) {
+	interval := s.opts.RingNotifyInterval
+	if interval <= 0 {
+		interval = defaultRingNotifyInterval
+	}
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-stop:
+			return
+		case <-ticker.C:
+			s.callEventWithDone(ctx, CallEventRinging, id, true, stop)
+		}
+	}
 }
 
 // ErrCallBusy is returned when a call is already in progress.
@@ -91,6 +129,23 @@ type trackedCall struct {
 	aiAt      time.Time // when the assistant answers; zero: it will not
 	byAI      bool      // the assistant answered
 	aiStarted bool      // the assistant was handed the call
+
+	ringStop chan struct{}
+	ringOnce sync.Once
+}
+
+func (t *trackedCall) stopRinging() {
+	t.ringOnce.Do(func() {
+		if t.ringStop != nil {
+			close(t.ringStop)
+		}
+	})
+}
+
+func (s *Service) stopAllRinging() {
+	for _, t := range s.calls.tracked {
+		t.stopRinging()
+	}
 }
 
 // callState is owned by the goroutine running serve.
@@ -140,7 +195,11 @@ func (s *Service) updateCalls(ctx context.Context, m *modem.Modem) error {
 			if c.Incoming {
 				s.note(ctx, "info", "来电："+displayNumber(c.Number))
 				s.scheduleAssistant(ctx, t)
-				s.callEvent(ctx, CallEventRinging, t.info.RecordID)
+				if c.State != modem.CallActive {
+					t.ringStop = make(chan struct{})
+					s.callEventWithDone(ctx, CallEventRinging, t.info.RecordID, false, t.ringStop)
+					go s.repeatRinging(ctx, t.info.RecordID, t.ringStop)
+				}
 			} else {
 				s.note(ctx, "info", "拨出电话："+displayNumber(c.Number))
 			}
@@ -148,18 +207,23 @@ func (s *Service) updateCalls(ctx context.Context, m *modem.Modem) error {
 		}
 		if t.info.Number == "" && c.Number != "" {
 			t.info.Number = c.Number
+			s.store.SetCallNumber(ctx, t.info.RecordID, c.Number)
 		}
 		t.info.State = c.State
-		if c.State == modem.CallActive && t.info.AnsweredAt.IsZero() {
-			t.info.AnsweredAt = now
-			s.store.AnswerCall(ctx, t.info.RecordID, now)
-			s.hub.Publish(TopicCalls)
+		if c.State == modem.CallActive {
+			t.stopRinging()
+			if t.info.AnsweredAt.IsZero() {
+				t.info.AnsweredAt = now
+				s.store.AnswerCall(ctx, t.info.RecordID, now)
+				s.hub.Publish(TopicCalls)
+			}
 		}
 	}
 	for id, t := range cs.tracked {
 		if seen[id] {
 			continue
 		}
+		t.stopRinging()
 		status := store.CallCanceled
 		switch {
 		case !t.info.AnsweredAt.IsZero():
@@ -271,6 +335,7 @@ func (s *Service) Answer(ctx context.Context) error {
 		if err := m.Answer(ctx); err != nil {
 			return friendly(err)
 		}
+		t.stopRinging()
 		return s.updateCalls(ctx, m)
 	})
 }
@@ -281,6 +346,7 @@ func (s *Service) Hangup(ctx context.Context) error {
 		for _, t := range s.calls.tracked {
 			if t.info.Incoming && t.info.AnsweredAt.IsZero() {
 				t.rejected, t.aiAt = true, time.Time{}
+				t.stopRinging()
 			}
 		}
 		if err := m.Hangup(ctx); err != nil {

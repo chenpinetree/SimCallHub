@@ -84,6 +84,12 @@ func (s *Store) AnswerCall(ctx context.Context, id int64, at time.Time) error {
 	return err
 }
 
+// SetCallNumber updates the caller number if it arrived after the initial RING.
+func (s *Store) SetCallNumber(ctx context.Context, id int64, number string) error {
+	_, err := s.db.ExecContext(ctx, `UPDATE calls SET peer = ?, number = ? WHERE id = ?`, NormalizePeer(number), number, id)
+	return err
+}
+
 // EndCall records how a call ended. Missed calls, and calls with an
 // assistant note, stay unseen until looked at.
 func (s *Store) EndCall(ctx context.Context, id int64, status string, at time.Time) error {

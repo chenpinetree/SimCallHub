@@ -180,11 +180,26 @@ func TestNotifierPushesAndRetries(t *testing.T) {
 	// Turning SMS off stops SMS pushes.
 	mu.Lock()
 	cfg.Rules.SMS = false
+	cfg.Rules.RingingRepeat = false
 	mu.Unlock()
 	n.Messages(msgs)
+	// When RingingRepeat is false, Repeat ringing events are skipped.
+	n.Call(service.CallEvent{Kind: service.CallEventRinging, Repeat: true, Record: store.CallRecord{Number: "13800000000", StartedAt: time.Now()}})
 	time.Sleep(300 * time.Millisecond)
 	if len(api.texts()) != 3 {
-		t.Fatal("SMS pushed while turned off")
+		t.Fatal("SMS or repeat ringing pushed while turned off")
+	}
+	// When RingingRepeat is true, Repeat ringing events are pushed.
+	mu.Lock()
+	cfg.Rules.RingingRepeat = true
+	mu.Unlock()
+	n.Call(service.CallEvent{Kind: service.CallEventRinging, Repeat: true, Record: store.CallRecord{Number: "13800000000", StartedAt: time.Now()}})
+	deadline = time.Now().Add(3 * time.Second)
+	for len(api.texts()) < 4 && time.Now().Before(deadline) {
+		time.Sleep(50 * time.Millisecond)
+	}
+	if len(api.texts()) != 4 {
+		t.Fatalf("repeat ringing not pushed when RingingRepeat=true: got %d messages", len(api.texts()))
 	}
 }
 

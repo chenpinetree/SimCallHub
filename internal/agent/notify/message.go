@@ -30,8 +30,21 @@ type Note struct {
 	Body     string   // the SMS text
 	Fields   [][2]string
 	Footnote string
-	Code     string // a verification code to copy
-	Color    string // card colour where supported: blue, green, orange, red, grey
+	Code     string          // a verification code to copy
+	Color    string          // card colour where supported: blue, green, orange, red, grey
+	Done     <-chan struct{} // when non-nil and closed, the event is over and this note is skipped
+}
+
+func (n Note) expired() bool {
+	if n.Done == nil {
+		return false
+	}
+	select {
+	case <-n.Done:
+		return true
+	default:
+		return false
+	}
 }
 
 // heading is the plain title line used where a separate title is needed.
@@ -105,7 +118,8 @@ func CallNote(e service.CallEvent, name string) Note {
 	switch e.Kind {
 	case service.CallEventRinging:
 		return Note{Icon: "📞", Title: "来电", Tags: tags, Color: "orange",
-			Meta: append(who(r.Number, name), Span{Text: " 正在呼入" + at})}
+			Meta: append(who(r.Number, name), Span{Text: " 正在呼入" + at}),
+			Done: e.Done}
 	case service.CallEventMissed:
 		return Note{Icon: "📵", Title: "未接来电", Tags: tags, Color: "red",
 			Meta: append(who(r.Number, name), Span{Text: at})}

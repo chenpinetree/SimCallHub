@@ -388,6 +388,7 @@ export interface NotifyRules {
   maskCodes: boolean;
   skipCategories: string[];
   ringing: boolean;
+  ringingRepeat: boolean;
   missed: boolean;
   summaries: boolean;
   skipCallCategories: string[];

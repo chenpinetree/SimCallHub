@@ -73,6 +73,9 @@ type Options struct {
 	Assistant Assistant
 	// OnCall is told about calls worth a notification. It must not block.
 	OnCall func(CallEvent)
+	// RingNotifyInterval overrides how often an unanswered incoming call
+	// re-pushes a ringing notification (defaults to 2s).
+	RingNotifyInterval time.Duration
 	// RecordingDir receives call recordings that KeepRecording wants; an
 	// empty directory turns recording off.
 	RecordingDir  string
@@ -266,6 +269,7 @@ func (s *Service) serve(ctx context.Context, port io.ReadWriteCloser) error {
 	defer session.Close()
 	m := modem.New(session)
 	s.port, s.calls = port, callState{tracked: map[int]*trackedCall{}}
+	defer s.stopAllRinging()
 	// The audio port borrows this connection; close it first.
 	defer s.stopAudio(context.WithoutCancel(ctx), nil)
 	defer s.update(func(snap *Snapshot) { snap.Calls, snap.Assistant = nil, AssistantState{} })
