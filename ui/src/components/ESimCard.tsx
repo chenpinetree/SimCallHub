@@ -6,6 +6,7 @@ import { Button, Card, CardBody, CardHeader, Badge, Spinner, ConfirmModal, Modal
 
 export interface ESimProfile {
   iccid: string;
+  isdpAid?: string;
   name: string;
   provider: string;
   nickname: string;
@@ -16,8 +17,26 @@ export interface ESimProfile {
 export interface ESimInfo {
   supported: boolean;
   eid?: string;
+  aid?: string;
+  cardBrand?: string;
+  svn?: string;
+  firmwareVer?: string;
+  javaCardVer?: string;
+  sasNumber?: string;
+  freeNvmBytes?: number;
+  freeRamBytes?: number;
+  installedApps?: number;
   profiles?: ESimProfile[];
   error?: string;
+}
+
+function formatBytes(bytes?: number): string {
+  if (!bytes || bytes <= 0) return "未知";
+  const kb = bytes / 1024;
+  if (kb >= 1024) {
+    return `${(kb / 1024).toFixed(2)} MB (${kb.toFixed(0)} KB)`;
+  }
+  return `${kb.toFixed(1)} KB`;
 }
 
 export function ESimCard({ d }: { d: DeviceStatus }) {
@@ -83,7 +102,7 @@ export function ESimCard({ d }: { d: DeviceStatus }) {
           </div>
           <h3 className="mt-3 text-sm font-medium">当前为普通物理 SIM 卡</h3>
           <p className="mt-1 text-xs text-muted max-w-md mx-auto">
-            未检测到 eUICC / eSIM 芯片响应。如果你的卡板焊接了 eSIM 芯片或插有 5ber/estk 等可写卡，请确认模组与卡槽接触良好。
+            未检测到 eUICC / eSIM 芯片响应。如果你的卡板焊接了 eSIM 芯片或插有 Xesim / 5ber / estk / 9eSIM 等可写卡，请确认模组与卡槽接触良好。
           </p>
         </CardBody>
       </Card>
@@ -91,13 +110,14 @@ export function ESimCard({ d }: { d: DeviceStatus }) {
   }
 
   const profiles = esim.profiles || [];
+  const estRemainingProfiles = esim.freeNvmBytes && esim.freeNvmBytes > 0 ? Math.floor(esim.freeNvmBytes / (28 * 1024)) : null;
 
   return (
     <div className="space-y-4">
       <Card>
         <CardHeader
           title="eSIM 芯片信息"
-          subtitle="eUICC 硬件就绪"
+          subtitle={esim.cardBrand || "eUICC 硬件就绪"}
           icon={Cpu}
           action={
             <Button size="sm" variant="outline" onClick={() => refetch()} loading={isFetching}>
@@ -108,16 +128,33 @@ export function ESimCard({ d }: { d: DeviceStatus }) {
         />
         <CardBody>
           <div className="grid gap-3 sm:grid-cols-2">
-            <div className="rounded-lg border bg-muted/20 p-3">
-              <div className="text-xs text-muted">EID (eUICC Identifier)</div>
+            <div className="rounded-lg border bg-muted/20 p-3 sm:col-span-2">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="text-xs text-muted">EID (eUICC Identifier)</div>
+                {esim.cardBrand && <Badge tone="info">{esim.cardBrand}</Badge>}
+              </div>
               <div className="mt-1 font-mono text-sm font-medium tracking-tight break-all">
                 {esim.eid || "未读取到 EID"}
               </div>
             </div>
             <div className="rounded-lg border bg-muted/20 p-3">
-              <div className="text-xs text-muted">已安装 Profile 数量</div>
+              <div className="text-xs text-muted">已安装 Profile / 剩余可用容量</div>
               <div className="mt-1 text-sm font-medium">
                 {profiles.length} 个配置文件
+                {esim.freeNvmBytes ? (
+                  <span className="ml-2 text-xs text-muted font-normal">
+                    · 剩余 {formatBytes(esim.freeNvmBytes)}
+                    {estRemainingProfiles !== null && ` (约可装 ${estRemainingProfiles} 张)`}
+                  </span>
+                ) : null}
+              </div>
+            </div>
+            <div className="rounded-lg border bg-muted/20 p-3">
+              <div className="text-xs text-muted">SGP.22 协议 / 固件版本</div>
+              <div className="mt-1 text-sm font-medium font-mono">
+                {esim.svn ? `SGP.22 v${esim.svn}` : "SGP.22"}
+                {esim.firmwareVer ? ` · FW v${esim.firmwareVer}` : ""}
+                {esim.sasNumber ? ` · ${esim.sasNumber}` : ""}
               </div>
             </div>
           </div>

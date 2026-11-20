@@ -13,7 +13,7 @@ RUN apt-get update \
 
 WORKDIR /src
 COPY . .
-ARG VERSION=v1.2.1
+ARG VERSION=v1.2.2
 RUN go build -trimpath -ldflags "-s -w -X main.version=${VERSION}" -o /out/simcallhub ./cmd/simcallhub
 
 # ---------- 运行阶段 ----------
