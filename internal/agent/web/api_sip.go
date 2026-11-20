@@ -36,7 +36,7 @@ func (s *Server) getSIP(w http.ResponseWriter, r *http.Request) {
 func (s *Server) putSIP(w http.ResponseWriter, r *http.Request) {
 	var req sipUpdateRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "invalid request body", http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, "请求参数格式无效")
 		return
 	}
 
@@ -63,39 +63,49 @@ func (s *Server) putSIP(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		if len(cleaned) == 0 {
-			http.Error(w, "至少需要保留一个有效的分机账号", http.StatusBadRequest)
+			writeError(w, http.StatusBadRequest, "至少需要保留一个有效的分机账号")
 			return
 		}
 		req.Extensions = cleaned
 		req.Username = cleaned[0].Username
 		req.Password = cleaned[0].Password
-
-		if s.SIP != nil {
-			s.SIP.UpdateExtensions(cleaned, ringTimeout)
-		}
 	} else {
 		req.Username = strings.TrimSpace(req.Username)
 		req.Password = strings.TrimSpace(req.Password)
 		if req.Username == "" {
-			http.Error(w, "分机号不能为空", http.StatusBadRequest)
+			writeError(w, http.StatusBadRequest, "分机号不能为空")
 			return
 		}
 		if req.Password == "" {
-			http.Error(w, "分机密码不能为空", http.StatusBadRequest)
+			writeError(w, http.StatusBadRequest, "分机密码不能为空")
 			return
-		}
-		if s.SIP != nil {
-			s.SIP.UpdateConfig(req.Username, req.Password, ringTimeout)
 		}
 	}
 
-	// Persist to store
-	if s.Store != nil {
-		data, _ := json.Marshal(req)
-		_ = s.Store.SetSetting(r.Context(), "sip_config", string(data))
+	// Persist encrypted to store before applying to live server
+	data, err := json.Marshal(req)
+	if err != nil {
+		s.serverError(w, err)
+		return
+	}
+	if s.Settings != nil {
+		if err := s.Settings.SetSIPConfig(r.Context(), string(data)); err != nil {
+			s.serverError(w, err)
+			return
+		}
+	} else if s.Store != nil {
+		if err := s.Store.SetSetting(r.Context(), "sip_config", string(data)); err != nil {
+			s.serverError(w, err)
+			return
+		}
 	}
 
 	if s.SIP != nil {
+		if len(req.Extensions) > 0 {
+			s.SIP.UpdateExtensions(req.Extensions, ringTimeout)
+		} else {
+			s.SIP.UpdateConfig(req.Username, req.Password, ringTimeout)
+		}
 		writeJSON(w, http.StatusOK, s.SIP.Status())
 	} else {
 		writeJSON(w, http.StatusOK, map[string]any{"ok": true})

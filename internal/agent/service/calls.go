@@ -38,6 +38,7 @@ const (
 	CallEventRinging = "ringing" // an incoming call started ringing
 	CallEventMissed  = "missed"  // it ended unanswered
 	CallEventNote    = "note"    // the assistant saved its note
+	CallEventEnded   = "ended"   // an active or rejected call ended
 )
 
 // CallEvent is a call worth telling the owner about.
@@ -237,6 +238,8 @@ func (s *Service) updateCalls(ctx context.Context, m *modem.Modem) error {
 		delete(cs.tracked, id)
 		if status == store.CallMissed {
 			s.callEvent(ctx, CallEventMissed, t.info.RecordID)
+		} else if status == store.CallCompleted || status == store.CallRejected || status == store.CallCanceled {
+			s.callEvent(ctx, CallEventEnded, t.info.RecordID)
 		}
 		text := map[string]string{store.CallCompleted: "通话结束", store.CallRejected: "已拒接", store.CallMissed: "未接来电", store.CallCanceled: "未接通"}[status]
 		s.note(ctx, "info", text+"："+displayNumber(t.info.Number))

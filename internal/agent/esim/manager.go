@@ -424,8 +424,24 @@ func (mgr *Manager) DeleteProfile(ctx context.Context, m *modem.Modem, iccid str
 	return checkOperationResult("DeleteProfile", payload)
 }
 
+// derLenHex encodes an ASN.1 DER length in uppercase hex.
+func derLenHex(n int) string {
+	if n < 0x80 {
+		return fmt.Sprintf("%02X", n)
+	}
+	if n <= 0xFF {
+		return fmt.Sprintf("81%02X", n)
+	}
+	return fmt.Sprintf("82%04X", n)
+}
+
 // SetNickname updates the user-friendly nickname of an installed profile.
 func (mgr *Manager) SetNickname(ctx context.Context, m *modem.Modem, iccid, nickname string) error {
+	nickBytes := []byte(nickname)
+	if len(nickBytes) > 64 {
+		return fmt.Errorf("nickname too long (%d bytes, max 64)", len(nickBytes))
+	}
+
 	ch, err := OpenISDRChannel(ctx, m)
 	if err != nil {
 		return err
@@ -437,9 +453,8 @@ func (mgr *Manager) SetNickname(ctx context.Context, m *modem.Modem, iccid, nick
 		return fmt.Errorf("invalid ICCID %s: %w", iccid, err)
 	}
 
-	nickBytes := []byte(nickname)
-	inner := fmt.Sprintf("5A%02X%s90%02X%s", len(bcd), HexBytes(bcd), len(nickBytes), HexBytes(nickBytes))
-	tlv := fmt.Sprintf("BF29%02X%s", len(inner)/2, inner)
+	inner := fmt.Sprintf("5A%s%s90%s%s", derLenHex(len(bcd)), HexBytes(bcd), derLenHex(len(nickBytes)), HexBytes(nickBytes))
+	tlv := fmt.Sprintf("BF29%s%s", derLenHex(len(inner)/2), inner)
 
 	payload, sw, err := ch.TransmitStoreData(ctx, tlv)
 	if err != nil {

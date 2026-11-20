@@ -173,3 +173,31 @@ func TestWebhookSealed(t *testing.T) {
 		t.Fatalf("config = %+v", cfg)
 	}
 }
+
+func TestSIPConfigEncryptedAndLegacy(t *testing.T) {
+	s, st := open(t)
+	ctx := context.Background()
+
+	plain := `{"username":"1001","password":"super-secret-sip-password","ring_timeout":20}`
+	if err := s.SetSIPConfig(ctx, plain); err != nil {
+		t.Fatalf("SetSIPConfig: %v", err)
+	}
+	stored, _ := st.Setting(ctx, keySIPConfig)
+	if stored == "" || strings.Contains(stored, "super-secret-sip-password") || strings.HasPrefix(stored, "{") {
+		t.Fatalf("SIP config stored in plaintext: %q", stored)
+	}
+	got, ok, err := s.SIPConfig(ctx)
+	if err != nil || !ok || got != plain {
+		t.Fatalf("SIPConfig = (%q, %v, %v)", got, ok, err)
+	}
+
+	// Legacy plaintext JSON must still be readable.
+	legacy := `{"username":"1002","password":"legacy-password","ring_timeout":30}`
+	if err := st.SetSetting(ctx, keySIPConfig, legacy); err != nil {
+		t.Fatal(err)
+	}
+	gotLegacy, ok, err := s.SIPConfig(ctx)
+	if err != nil || !ok || gotLegacy != legacy {
+		t.Fatalf("legacy SIPConfig = (%q, %v, %v)", gotLegacy, ok, err)
+	}
+}

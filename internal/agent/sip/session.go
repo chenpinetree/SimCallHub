@@ -19,12 +19,21 @@ const (
 	DirectionOutbound                      // SIP client dialed -> outgoing cellular call
 )
 
+// InviteTarget tracks one ringing SIP extension leg for an inbound call.
+type InviteTarget struct {
+	Username string
+	Addr     *net.UDPAddr
+	Branch   string
+	Rejected bool
+}
+
 // CallSession coordinates one active SIP-to-Cellular phone call.
 type CallSession struct {
 	CallID     string
 	Direction  CallDirection
 	CallerNum  string
 	CalleeNum  string
+	RemoteUser string
 	FromHeader string
 	ToHeader   string
 	ViaHeader  string
@@ -32,6 +41,7 @@ type CallSession struct {
 
 	ClientAddr *net.UDPAddr
 	RTPStream  *RTPStream
+	Targets    []*InviteTarget
 
 	ModemSvc    *service.Service
 	AudioStream *service.AudioStream
@@ -102,13 +112,14 @@ func (s *CallSession) downlinkLoop() {
 				return
 			}
 			var g711Payload []byte
-			if s.Codec == PayloadPCMA {
+			codec := s.GetCodec()
+			if codec == PayloadPCMA {
 				g711Payload = LinearToAlaw(pcm)
 			} else {
 				g711Payload = LinearToUlaw(pcm)
 			}
 
-			if err := s.RTPStream.SendAudioFrame(g711Payload, s.Codec); err != nil {
+			if err := s.RTPStream.SendAudioFrame(g711Payload, codec); err != nil {
 				// Non-fatal dropped packet
 			}
 		}
@@ -139,7 +150,7 @@ func (s *CallSession) uplinkLoop() {
 			}
 
 			var pcm16 []byte
-			if pkt.Header.PayloadType == PayloadPCMA || s.Codec == PayloadPCMA {
+			if pkt.Header.PayloadType == PayloadPCMA || s.GetCodec() == PayloadPCMA {
 				pcm16 = AlawToLinear(pkt.Payload)
 			} else {
 				pcm16 = UlawToLinear(pkt.Payload)
@@ -150,6 +161,27 @@ func (s *CallSession) uplinkLoop() {
 			}
 		}
 	}
+}
+
+// SetCodec updates the negotiated RTP payload type safely.
+func (s *CallSession) SetCodec(codec byte) {
+	s.mu.Lock()
+	s.Codec = codec
+	s.mu.Unlock()
+}
+
+// GetCodec returns the negotiated RTP payload type safely.
+func (s *CallSession) GetCodec() byte {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.Codec
+}
+
+// IsClosed reports whether the session has been terminated.
+func (s *CallSession) IsClosed() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.closed
 }
 
 // Close terminates the call session and releases all audio and network resources.
