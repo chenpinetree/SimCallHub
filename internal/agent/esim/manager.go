@@ -213,8 +213,8 @@ func (mgr *Manager) queryProfiles(ctx context.Context, ch *Channel) ([]Profile, 
 	// Try standard empty ProfileInfoListRequest first (returns all tags on Xesim X7 and standard eUICCs)
 	payload, sw, err := ch.Transmit(ctx, "80E2910003BF2D00")
 	if err != nil || !IsSuccessSW(sw) || len(payload) == 0 {
-		// Fallback to explicit TagList (5C 06 5A 9F70 91 92 90) as in Xesim LPA La2/f
-		payload, sw, err = ch.Transmit(ctx, "80E291000BBF2D095C075A9F709192909500")
+		// Fallback to explicit TagList (5C 07 5A 9F70 91 92 90 95) as in Xesim LPA
+		payload, sw, err = ch.Transmit(ctx, "80E291000CBF2D095C075A9F709192909500")
 		if err != nil {
 			return nil, err
 		}

@@ -116,4 +116,20 @@ func TestXesimX7Payloads(t *testing.T) {
 	if id := parseCCHOSession([]string{"+CCHO: 1", "OK"}); id != 1 {
 		t.Errorf("expected 1 for +CCHO: 1, got %d", id)
 	}
+
+	// 7. Real Xesim multi-profile BF2D payload with Club (enabled) and Kolet (disabled)
+	multiPayload, _ := hex.DecodeString("BF2D81B1A081AEE3315A0A985802004136320792F54F10A0000005591010FFFFFFFF89000012009F7001019104436C75629204436C7562950102E3795A0A988410000230763561F64F10A0000005591010FFFFFFFF89000013009F70010090054B6F6C657491054B6F6C657492054B6F6C6574950102BF763CE23AE12CC1146750ADBF4600909A90704D9C4497BE5080F3E09DCA14636F6D2E6F64792E636F6E73756D65722E617070E30ADB080000000000000001")
+	mProfiles, err := ParseProfilesTLV(multiPayload)
+	if err != nil {
+		t.Fatalf("ParseProfilesTLV multi error: %v", err)
+	}
+	if len(mProfiles) != 2 {
+		t.Fatalf("expected 2 profiles, got %d", len(mProfiles))
+	}
+	if mProfiles[0].ICCID != "8985200014632370295" || mProfiles[0].State != "enabled" || mProfiles[0].Provider != "Club" {
+		t.Errorf("unexpected profile 0: %+v", mProfiles[0])
+	}
+	if mProfiles[1].ICCID != "8948010020036753166" || mProfiles[1].State != "disabled" || mProfiles[1].Provider != "Kolet" || mProfiles[1].Nickname != "Kolet" {
+		t.Errorf("unexpected profile 1: %+v", mProfiles[1])
+	}
 }

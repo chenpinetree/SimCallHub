@@ -141,7 +141,9 @@ func (c *Channel) TransmitStoreData(ctx context.Context, tlvHex string) ([]byte,
 // Transmit transmits a raw APDU command through the logical channel and returns the response bytes.
 func (c *Channel) Transmit(ctx context.Context, apduHex string) ([]byte, uint16, error) {
 	apduHex = strings.TrimSpace(apduHex)
-	apduLen := len(apduHex) / 2
+	// In 3GPP TS 27.007 and Quectel modems (+CGLA=<sessionid>,<length>,<command>),
+	// <length> is an integer specifying the character count of <command>, not byte count.
+	apduLen := len(apduHex)
 	cmd := fmt.Sprintf(`AT+CGLA=%d,%d,"%s"`, c.SessionID, apduLen, apduHex)
 
 	lines, err := c.m.Raw(ctx, cmd, DefaultTimeout)
@@ -181,15 +183,18 @@ func (c *Channel) Transmit(ctx context.Context, apduHex string) ([]byte, uint16,
 		return c.Transmit(ctx, correctedAPDU)
 	}
 
-	// Handle 61xx (GET RESPONSE): more data available from card
-	if sw1 == 0x61 {
+	// Handle 61xx (GET RESPONSE): more data available from card (e.g. 61B5 -> 00C00000B5)
+	for sw1 == 0x61 {
 		le := sw2
 		getRespAPDU := fmt.Sprintf("00C00000%02X", le)
 		morePayload, moreSW, err := c.Transmit(ctx, getRespAPDU)
-		if err == nil {
-			payload = append(payload, morePayload...)
-			sw = moreSW
+		if err != nil {
+			return payload, sw, err
 		}
+		payload = append(payload, morePayload...)
+		sw = moreSW
+		sw1 = byte(sw >> 8)
+		sw2 = byte(sw & 0xFF)
 	}
 
 	return payload, sw, nil
