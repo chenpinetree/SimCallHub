@@ -385,7 +385,7 @@ func runServe(args []string) error {
 		var sCfg struct {
 			Username    string                `json:"username"`
 			Password    string                `json:"password"`
-			RingTimeout int                   `json:"ring_timeout"`
+			RingTimeout *int                  `json:"ring_timeout"`
 			Extensions  []sip.ExtensionConfig `json:"extensions"`
 		}
 		if err := json.Unmarshal([]byte(saved), &sCfg); err == nil {
@@ -395,8 +395,8 @@ func runServe(args []string) error {
 			if sCfg.Password != "" {
 				sipCfg.Password = sCfg.Password
 			}
-			if sCfg.RingTimeout > 0 {
-				sipCfg.RingTimeout = sCfg.RingTimeout
+			if sCfg.RingTimeout != nil {
+				sipCfg.RingTimeout = *sCfg.RingTimeout
 			}
 			if len(sCfg.Extensions) > 0 {
 				sipCfg.Extensions = sCfg.Extensions

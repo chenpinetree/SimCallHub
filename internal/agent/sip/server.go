@@ -80,7 +80,7 @@ func NewServer(cfg Config, devices *service.Manager, log *slog.Logger) *Server {
 	if cfg.RTPPortEnd <= cfg.RTPPortStart {
 		cfg.RTPPortEnd = cfg.RTPPortStart + 100
 	}
-	if cfg.RingTimeout <= 0 {
+	if cfg.RingTimeout < -1 {
 		cfg.RingTimeout = 20
 	}
 
@@ -155,9 +155,7 @@ func (s *Server) UpdateConfig(username, password string, ringTimeout int) {
 	oldUser := s.cfg.Username
 	s.cfg.Username = username
 	s.cfg.Password = password
-	if ringTimeout > 0 {
-		s.cfg.RingTimeout = ringTimeout
-	}
+	s.cfg.RingTimeout = ringTimeout
 	s.sessMu.Unlock()
 
 	s.registrar.UpdateAccount(oldUser, username, password)
@@ -166,9 +164,7 @@ func (s *Server) UpdateConfig(username, password string, ringTimeout int) {
 // UpdateExtensions updates all extension accounts, bindings and ring timeout dynamically.
 func (s *Server) UpdateExtensions(exts []ExtensionConfig, ringTimeout int) {
 	s.sessMu.Lock()
-	if ringTimeout > 0 {
-		s.cfg.RingTimeout = ringTimeout
-	}
+	s.cfg.RingTimeout = ringTimeout
 	s.cfg.Extensions = exts
 	if len(exts) > 0 {
 		s.cfg.Username = exts[0].Username
@@ -676,27 +672,40 @@ func (s *Server) NotifyCallEvent(event service.CallEvent) {
 
 // ringExtensions sends an INVITE with SDP offer to all currently registered SIP clients.
 func (s *Server) ringExtensions(event service.CallEvent) {
-	active := s.registrar.GetActiveExtensions()
-	if len(active) == 0 {
-		s.log.Info("incoming 4G call ringing, but no SIP extensions currently registered")
-		return
-	}
-
 	caller := event.Record.Number
 	if caller == "" {
 		caller = "Unknown"
 	}
 
-	modems := s.devices.Services()
 	var modem *service.Service
-	for _, m := range modems {
-		if m.DeviceID() == event.Record.DeviceID {
-			modem = m
-			break
+	if s.devices != nil {
+		for _, m := range s.devices.Services() {
+			if m.DeviceID() == event.Record.DeviceID {
+				modem = m
+				break
+			}
+		}
+		if modem == nil && len(s.devices.Services()) > 0 {
+			modem = s.devices.Services()[0]
 		}
 	}
-	if modem == nil && len(modems) > 0 {
-		modem = modems[0]
+
+	// 1. RingTimeout == 0: 立即自动切入 AI 接听助手 (分机不振铃)
+	if s.cfg.RingTimeout == 0 {
+		s.log.Info("SIP ring timeout is 0 (immediate AI takeover), triggering AI assistant without ringing SIP extensions", "call_id", event.Record.ID, "deviceID", event.Record.DeviceID)
+		if modem != nil {
+			go func() {
+				time.Sleep(300 * time.Millisecond)
+				_ = modem.AnswerWithAssistant(context.Background())
+			}()
+		}
+		return
+	}
+
+	active := s.registrar.GetActiveExtensions()
+	if len(active) == 0 {
+		s.log.Info("incoming 4G call ringing, but no SIP extensions currently registered")
+		return
 	}
 
 	callID := hex.EncodeToString(randomBytes(16)) + "@" + s.cfg.Domain
@@ -729,6 +738,11 @@ func (s *Server) ringExtensions(event service.CallEvent) {
 
 	s.log.Info("ringing registered SIP extensions for incoming call", "caller", caller, "deviceID", event.Record.DeviceID, "targetExtensions", len(targets))
 
+	// If SIP extensions are ringing, suppress premature assistant pickup
+	if modem != nil {
+		_ = modem.SkipAssistant(context.Background())
+	}
+
 	for _, ext := range targets {
 		localIP := s.publicIP(ext.Addr.IP)
 		sdpBody := GenerateSDP(localIP, rtpPort)
@@ -752,40 +766,50 @@ func (s *Server) ringExtensions(event service.CallEvent) {
 		_ = s.send(invite, ext.Addr)
 	}
 
-	// Ring timeout watchdog: if not answered within RingTimeout, cancel INVITE so SimCallHub AI can take over
-	go func() {
-		select {
-		case <-time.After(time.Duration(s.cfg.RingTimeout) * time.Second):
-			s.sessMu.Lock()
-			sessRef, ok := s.sessions[callID]
-			s.sessMu.Unlock()
-
-			if ok && sessRef != nil && !sessRef.IsActive() {
-				s.log.Info("SIP ring timeout exceeded, canceling extension invite for AI/voice fallback", "call_id", callID)
-				for _, ext := range targets {
-					cancelMsg := &SIPMessage{
-						IsResponse: false,
-						Method:     "CANCEL",
-						URI:        fmt.Sprintf("sip:%s@%s", ext.Username, ext.Addr.String()),
-						Headers: map[string]string{
-							"Via":     fmt.Sprintf("SIP/2.0/UDP %s:%d;branch=z9hG4bKcancel;rport", s.publicIP(ext.Addr.IP), addrPort(s.conn.LocalAddr())),
-							"From":    fmt.Sprintf(`"%s" <sip:%s@%s>`, caller, caller, s.cfg.Domain),
-							"To":      fmt.Sprintf("<sip:%s@%s>", ext.Username, s.cfg.Domain),
-							"Call-ID": callID,
-							"CSeq":    "100 CANCEL",
-						},
-					}
-					_ = s.send(cancelMsg, ext.Addr)
-				}
-				sessRef.Close()
+	// Ring timeout watchdog: if RingTimeout > 0 and not answered within RingTimeout, cancel INVITE so SimCallHub AI can take over
+	if s.cfg.RingTimeout > 0 {
+		go func() {
+			select {
+			case <-time.After(time.Duration(s.cfg.RingTimeout) * time.Second):
 				s.sessMu.Lock()
-				delete(s.sessions, callID)
+				sessRef, ok := s.sessions[callID]
 				s.sessMu.Unlock()
+
+				if ok && sessRef != nil && !sessRef.IsActive() {
+					s.log.Info("SIP ring timeout exceeded, canceling extension invite for AI/voice fallback", "call_id", callID, "timeout_sec", s.cfg.RingTimeout)
+					for _, ext := range targets {
+						cancelMsg := &SIPMessage{
+							IsResponse: false,
+							Method:     "CANCEL",
+							URI:        fmt.Sprintf("sip:%s@%s", ext.Username, ext.Addr.String()),
+							Headers: map[string]string{
+								"Via":     fmt.Sprintf("SIP/2.0/UDP %s:%d;branch=z9hG4bKcancel;rport", s.publicIP(ext.Addr.IP), addrPort(s.conn.LocalAddr())),
+								"From":    fmt.Sprintf(`"%s" <sip:%s@%s>`, caller, caller, s.cfg.Domain),
+								"To":      fmt.Sprintf("<sip:%s@%s>", ext.Username, s.cfg.Domain),
+								"Call-ID": callID,
+								"CSeq":    "100 CANCEL",
+							},
+						}
+						_ = s.send(cancelMsg, ext.Addr)
+					}
+					sessRef.Close()
+					s.sessMu.Lock()
+					delete(s.sessions, callID)
+					s.sessMu.Unlock()
+
+					// Hand over to AI assistant
+					if modem != nil {
+						go func() {
+							_ = modem.AnswerWithAssistant(context.Background())
+						}()
+					}
+				}
+			case <-sess.ctx.Done():
+				return
 			}
-		case <-sess.ctx.Done():
-			return
-		}
-	}()
+		}()
+	}
+	// Note: if RingTimeout < 0, watchdog is omitted, so extensions ring until answered or hung up without AI interruption.
 }
 
 func randomBytes(n int) []byte {

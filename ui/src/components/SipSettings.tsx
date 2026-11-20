@@ -56,7 +56,7 @@ export function SipSection() {
 
   useEffect(() => {
     if (sip) {
-      setRingTimeout(sip.ring_timeout || 20);
+      setRingTimeout(typeof sip.ring_timeout === "number" ? sip.ring_timeout : 20);
       if (sip.extensions && sip.extensions.length > 0) {
         setExtensions(sip.extensions);
       } else {
@@ -375,18 +375,29 @@ export function SipSection() {
           <div className="pt-2 border-t border-line flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
             <Field
               label="分机振铃超时（秒）"
-              hint="收到外线来电时，对应分机响铃超过此秒数未接听，系统将自动切入 AI 接听助手"
+              hint={
+                ringTimeout === 0
+                  ? "当前模式：立即切入 AI 接听助手（外线来电时分机不振铃，直接由 AI 应答）"
+                  : ringTimeout === -1
+                  ? "当前模式：关闭自动切入 AI 接听助手（外线来电时分机持续振铃，超时不转接 AI）"
+                  : `当前模式：收到外线来电时分机响铃超过 ${ringTimeout} 秒未接听，系统将自动切入 AI 接听助手`
+              }
             >
               <div className="flex items-center gap-3">
-                <Input
-                  type="number"
-                  min={5}
-                  max={60}
-                  value={ringTimeout}
-                  onChange={(e) => setRingTimeout(Math.max(5, Math.min(60, Number(e.target.value))))}
-                  className="w-32"
-                />
-                <span className="text-sm text-muted">秒（建议 15~30 秒）</span>
+                <Select
+                  value={ringTimeout.toString()}
+                  onChange={(e) => setRingTimeout(Number(e.target.value))}
+                  className="w-72"
+                >
+                  <option value="0">⚡ 立即自动切入 AI 接听助手</option>
+                  <option value="10">10 秒</option>
+                  <option value="20">20 秒（推荐）</option>
+                  <option value="30">30 秒</option>
+                  <option value="40">40 秒</option>
+                  <option value="50">50 秒</option>
+                  <option value="60">60 秒</option>
+                  <option value="-1">🚫 关闭自动切入 AI 接听助手</option>
+                </Select>
               </div>
             </Field>
 

@@ -171,3 +171,45 @@ func TestMultiExtensionBinding(t *testing.T) {
 		}
 	}
 }
+
+func TestRingTimeoutConfig(t *testing.T) {
+	cfg := DefaultConfig()
+	if cfg.RingTimeout != 20 {
+		t.Fatalf("expected default ring timeout 20, got %d", cfg.RingTimeout)
+	}
+
+	srv := NewServer(cfg, nil, nil)
+	if srv.Status().RingTimeout != 20 {
+		t.Fatalf("expected status ring timeout 20, got %d", srv.Status().RingTimeout)
+	}
+
+	// Test immediate AI (0)
+	srv.UpdateConfig("1001", "12345678", 0)
+	if srv.Status().RingTimeout != 0 {
+		t.Fatalf("expected ring timeout 0, got %d", srv.Status().RingTimeout)
+	}
+
+	// Test disable AI auto-takeover (-1)
+	srv.UpdateConfig("1001", "12345678", -1)
+	if srv.Status().RingTimeout != -1 {
+		t.Fatalf("expected ring timeout -1, got %d", srv.Status().RingTimeout)
+	}
+
+	// Test custom timeout (e.g. 30s) via UpdateExtensions
+	srv.UpdateExtensions([]ExtensionConfig{{ID: "1", Username: "1001", Password: "pwd"}}, 30)
+	if srv.Status().RingTimeout != 30 {
+		t.Fatalf("expected ring timeout 30, got %d", srv.Status().RingTimeout)
+	}
+
+	// Test 0 via UpdateExtensions
+	srv.UpdateExtensions([]ExtensionConfig{{ID: "1", Username: "1001", Password: "pwd"}}, 0)
+	if srv.Status().RingTimeout != 0 {
+		t.Fatalf("expected ring timeout 0, got %d", srv.Status().RingTimeout)
+	}
+
+	// Test -1 via UpdateExtensions
+	srv.UpdateExtensions([]ExtensionConfig{{ID: "1", Username: "1001", Password: "pwd"}}, -1)
+	if srv.Status().RingTimeout != -1 {
+		t.Fatalf("expected ring timeout -1, got %d", srv.Status().RingTimeout)
+	}
+}
