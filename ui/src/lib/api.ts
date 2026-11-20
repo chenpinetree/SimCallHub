@@ -266,6 +266,7 @@ export interface DeviceHealth {
 }
 
 export interface Status {
+  version?: string;
   devices: DeviceStatus[];
   orphans: number; // messages from before devices were tracked, not yet assigned
   missedCalls: number; // missed calls nobody has looked at

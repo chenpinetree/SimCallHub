@@ -15,6 +15,7 @@ import (
 
 // statusJSON is the dashboard and device page payload.
 type statusJSON struct {
+	Version string       `json:"version,omitempty"`
 	Devices []deviceJSON `json:"devices"`
 	// Orphans counts messages from before devices were tracked that no
 	// device has been assigned yet.
@@ -288,7 +289,7 @@ func (s *Server) status(w http.ResponseWriter, r *http.Request) {
 		s.serverError(w, err)
 		return
 	}
-	out := statusJSON{Devices: devices, Orphans: orphans, MissedCalls: missed, ScanModes: modem.ScanModes}
+	out := statusJSON{Version: s.Version, Devices: devices, Orphans: orphans, MissedCalls: missed, ScanModes: modem.ScanModes}
 	out.Messages = statsJSON{stats.Total, stats.Unread, stats.Today, stats.Pending, stats.Categories}
 	if cfg, err := s.Settings.LLM(r.Context()); err == nil {
 		out.Classifier.Enabled, out.Classifier.Ready = cfg.Enabled, cfg.Ready()
