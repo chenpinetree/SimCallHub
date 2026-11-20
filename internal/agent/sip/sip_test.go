@@ -128,3 +128,46 @@ func TestRegistrarAuth(t *testing.T) {
 		t.Fatalf("expected 1 active client with user agent, got %+v", clients)
 	}
 }
+
+func TestMultiExtensionBinding(t *testing.T) {
+	reg := NewRegistrar("SimCallHub", "", "")
+	accounts := map[string]string{
+		"1001": "pass1001",
+		"1002": "pass1002",
+		"1003": "pass1003",
+	}
+	devices := map[string]string{
+		"1001": "dev_imei_1",
+		"1002": "dev_imei_2",
+		"1003": "", // all devices
+	}
+	reg.SetAccounts(accounts, devices)
+
+	if d := reg.GetDeviceBinding("1001"); d != "dev_imei_1" {
+		t.Fatalf("expected 1001 to bind dev_imei_1, got %s", d)
+	}
+	if d := reg.GetDeviceBinding("1002"); d != "dev_imei_2" {
+		t.Fatalf("expected 1002 to bind dev_imei_2, got %s", d)
+	}
+	if d := reg.GetDeviceBinding("1003"); d != "" {
+		t.Fatalf("expected 1003 to have empty binding, got %s", d)
+	}
+
+	// Verify authentication for each extension
+	for user, pass := range accounts {
+		nonce := reg.GenerateNonce()
+		uri := "sip:192.168.1.100:5060"
+		resp := CalculateDigestResponse(user, "SimCallHub", pass, "REGISTER", uri, nonce, "", "", "")
+		req := &SIPMessage{
+			Method: "REGISTER",
+			URI:    uri,
+			Headers: map[string]string{
+				"Authorization": `Digest username="` + user + `", realm="SimCallHub", nonce="` + nonce + `", uri="` + uri + `", response="` + resp + `"`,
+			},
+		}
+		authedUser, ok := reg.Authenticate(req)
+		if !ok || authedUser != user {
+			t.Fatalf("failed to authenticate %s: ok=%v, authedUser=%s", user, ok, authedUser)
+		}
+	}
+}

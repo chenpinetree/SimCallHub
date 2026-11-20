@@ -509,6 +509,14 @@ export interface SipClient {
   registered_at: string;
 }
 
+export interface SipExtensionConfig {
+  id?: string;
+  username: string;
+  password: string;
+  device_id: string; // empty means all devices / default
+  name?: string;
+}
+
 export interface SipSettings {
   enabled: boolean;
   listen_addr: string;
@@ -516,6 +524,7 @@ export interface SipSettings {
   username: string;
   password: string;
   ring_timeout: number;
+  extensions?: SipExtensionConfig[];
   clients: SipClient[];
 }
 
