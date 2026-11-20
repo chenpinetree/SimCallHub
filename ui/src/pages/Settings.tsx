@@ -625,32 +625,47 @@ function CategoryEditor({ categories, defaults, onChange, editable }: { categori
 
 function AppearanceSection() {
   const { mode, setMode, theme, setTheme } = usePrefs();
+  const { data: status } = useStatus();
+  const { data: verData } = useQuery({
+    queryKey: ["version"],
+    queryFn: () => api.get<{ version: string }>("/api/version").catch(() => ({ version: "" })),
+  });
+  const version = status?.version || verData?.version;
+
   return (
-    <Card>
-      <CardHeader icon={Palette} title="界面" subtitle="保存在当前浏览器" />
-      <CardBody className="space-y-5">
-        <Row label="使用模式" hint={mode === "simple" ? "简洁模式：只显示日常需要的功能，操作都有引导。" : "专业模式：额外显示 AT 控制台、LTE 射频参数、网络制式、原始数据和类别编辑。"}>
-          <Segmented
-            value={mode}
-            onChange={setMode}
-            options={[
-              { value: "simple", label: "简洁", icon: Sparkles },
-              { value: "pro", label: "专业", icon: Wand2 },
-            ]}
-          />
-        </Row>
-        <Row label="主题">
-          <Segmented
-            value={theme}
-            onChange={setTheme}
-            options={[
-              { value: "system", label: "跟随系统", icon: Monitor },
-              { value: "dark", label: "深色", icon: Moon },
-              { value: "light", label: "浅色", icon: Sun },
-            ]}
-          />
-        </Row>
-      </CardBody>
+    <Card className="flex flex-col justify-between">
+      <div>
+        <CardHeader icon={Palette} title="界面" subtitle="保存在当前浏览器" />
+        <CardBody className="space-y-5">
+          <Row label="使用模式" hint={mode === "simple" ? "简洁模式：只显示日常需要的功能，操作都有引导。" : "专业模式：额外显示 AT 控制台、LTE 射频参数、网络制式、原始数据和类别编辑。"}>
+            <Segmented
+              value={mode}
+              onChange={setMode}
+              options={[
+                { value: "simple", label: "简洁", icon: Sparkles },
+                { value: "pro", label: "专业", icon: Wand2 },
+              ]}
+            />
+          </Row>
+          <Row label="主题">
+            <Segmented
+              value={theme}
+              onChange={setTheme}
+              options={[
+                { value: "system", label: "跟随系统", icon: Monitor },
+                { value: "dark", label: "深色", icon: Moon },
+                { value: "light", label: "浅色", icon: Sun },
+              ]}
+            />
+          </Row>
+        </CardBody>
+      </div>
+      <div className="flex items-center justify-end gap-1.5 px-5 pb-4 pt-1 text-xs text-subtle">
+        <span>版本</span>
+        <span className="font-mono select-all">
+          {version ? (version.startsWith("v") ? version : `v${version}`) : "v1.2.2"}
+        </span>
+      </div>
     </Card>
   );
 }

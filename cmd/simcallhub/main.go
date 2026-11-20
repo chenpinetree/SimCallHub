@@ -417,7 +417,7 @@ func runServe(args []string) error {
 	srv, err := web.New(web.Deps{
 		Store: st, Devices: devices, Settings: conf, Worker: worker, Client: client, Assistant: aide,
 		RecordingDir: recordings, VoicemailDir: voicemails, Notifier: notifier, Phonebook: book, SIP: sipSrv,
-		Log: log, SecureCookie: *secureCookie || *useTLS,
+		Log: log, Version: buildVersion(), SecureCookie: *secureCookie || *useTLS,
 	})
 	if err != nil {
 		return err

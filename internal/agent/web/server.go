@@ -62,6 +62,8 @@ type Deps struct {
 	// SIP is the embedded SIP VoIP extension PBX server.
 	SIP *sip.Server
 	Log *slog.Logger
+	// Version is the SimCallHub build version string.
+	Version string
 	// SecureCookie marks the session cookie Secure (HTTPS reverse proxy).
 	SecureCookie bool
 }
@@ -105,6 +107,9 @@ func (s *Server) Handler() http.Handler {
 	authed := func(pattern string, h http.HandlerFunc) { api(pattern, s.requireAuth(h)) }
 
 	api("GET /api/session", s.session)
+	api("GET /api/version", func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, http.StatusOK, map[string]string{"version": s.Version})
+	})
 	api("POST /api/login", s.login)
 	authed("POST /api/logout", s.logout)
 	authed("GET /api/stream", s.stream)
