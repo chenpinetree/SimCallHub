@@ -10,16 +10,17 @@ import {
   Save,
   Radio,
   HelpCircle,
-  Eye,
-  EyeOff,
   Server,
   Network,
-  User,
   Shield,
   Layers,
   CheckCircle,
+  Plus,
+  Trash2,
+  Wand2,
 } from "lucide-react";
-import { api, type SipSettings } from "../lib/api";
+import { api, type SipSettings, type SipExtensionConfig } from "../lib/api";
+import { useStatus } from "../lib/hooks";
 import {
   Button,
   Card,
@@ -28,6 +29,7 @@ import {
   Badge,
   Spinner,
   Input,
+  Select,
   Field,
   useToast,
   CopyButton,
@@ -39,30 +41,43 @@ export function SipSection() {
   const qc = useQueryClient();
   const toast = useToast();
 
+  const { data: status } = useStatus();
+  const devices = status?.devices ?? [];
+
   const { data: sip, isLoading } = useQuery<SipSettings>({
     queryKey: ["sip-settings"],
     queryFn: () => api.get<SipSettings>("/api/settings/sip"),
     refetchInterval: 5000, // 5秒轮询在线客户端
   });
 
-  const [username, setUsername] = useState("");
-  const [password, setPassword] = useState("");
+  const [extensions, setExtensions] = useState<SipExtensionConfig[]>([]);
   const [ringTimeout, setRingTimeout] = useState(20);
-  const [showPass, setShowPass] = useState(false);
+  const [showPassMap, setShowPassMap] = useState<Record<number, boolean>>({});
 
   useEffect(() => {
     if (sip) {
-      setUsername(sip.username || "1001");
-      setPassword(sip.password || "12345678");
       setRingTimeout(sip.ring_timeout || 20);
+      if (sip.extensions && sip.extensions.length > 0) {
+        setExtensions(sip.extensions);
+      } else {
+        setExtensions([
+          {
+            id: "default",
+            username: sip.username || "1001",
+            password: sip.password || "12345678",
+            device_id: "",
+            name: "默认主分机",
+          },
+        ]);
+      }
     }
   }, [sip]);
 
   const mutation = useMutation({
-    mutationFn: (data: { username: string; password: string; ring_timeout: number }) =>
+    mutationFn: (data: { extensions: SipExtensionConfig[]; ring_timeout: number; username: string; password: string }) =>
       api.put<SipSettings>("/api/settings/sip", data),
     onSuccess: (updated) => {
-      toast.ok("SIP 分机配置已保存并生效");
+      toast.ok("SIP 多分机与设备绑定配置已保存并生效");
       qc.setQueryData(["sip-settings"], updated);
     },
     onError: (err: Error) => {
@@ -75,6 +90,74 @@ export function SipSection() {
   const sipPort = "5060";
   const clients = sip?.clients ?? [];
   const hasOnlineClient = clients.length > 0;
+
+  // 添加分机
+  const handleAddExtension = () => {
+    const existingNums = extensions.map((e) => parseInt(e.username, 10)).filter((n) => !isNaN(n));
+    const nextNum = existingNums.length > 0 ? Math.max(...existingNums) + 1 : 1001;
+    const randomPass = Math.random().toString().slice(2, 10);
+    setExtensions([
+      ...extensions,
+      {
+        id: `ext_${Date.now()}`,
+        username: nextNum.toString(),
+        password: randomPass,
+        device_id: "",
+        name: `分机 ${nextNum}`,
+      },
+    ]);
+  };
+
+  // 一键为所有在线设备自动分配分机
+  const handleAutoAssign = () => {
+    if (devices.length === 0) {
+      toast.error("当前未检测到在线 4G 模组设备");
+      return;
+    }
+    const newExts: SipExtensionConfig[] = devices.map((d, idx) => {
+      const extNum = (1001 + idx).toString();
+      const op = d.modem.operator ? ` (${d.modem.operator})` : "";
+      return {
+        id: `ext_${d.id}`,
+        username: extNum,
+        password: extensions[idx]?.password || "12345678",
+        device_id: d.id,
+        name: `${d.name || "设备"}${op}`,
+      };
+    });
+    setExtensions(newExts);
+    toast.ok(`已为 ${devices.length} 台设备一键规划分机 (1001 ~ ${1000 + devices.length})，点击“保存配置”即可生效！`);
+  };
+
+  const handleUpdateExt = (idx: number, field: keyof SipExtensionConfig, val: string) => {
+    setExtensions((prev) => {
+      const next = [...prev];
+      next[idx] = { ...next[idx], [field]: val };
+      return next;
+    });
+  };
+
+  const handleRemoveExt = (idx: number) => {
+    if (extensions.length <= 1) {
+      toast.error("至少需要保留一个分机账号");
+      return;
+    }
+    setExtensions((prev) => prev.filter((_, i) => i !== idx));
+  };
+
+  const toggleShowPass = (idx: number) => {
+    setShowPassMap((prev) => ({ ...prev, [idx]: !prev[idx] }));
+  };
+
+  // 辅助：获取设备显示标签
+  const getDeviceLabel = (devId: string) => {
+    if (!devId) return "全部设备 (自动选择 / 来电全响)";
+    const d = devices.find((x) => x.id === devId);
+    if (!d) return `设备 ${devId}`;
+    const op = d.modem.operator ? ` [${d.modem.operator}]` : "";
+    const tail = d.identity.iccid ? `..${d.identity.iccid.slice(-6)}` : d.id.slice(-6);
+    return `${d.name || d.id}${op} (${tail})`;
+  };
 
   if (isLoading && !sip) {
     return (
@@ -110,50 +193,237 @@ export function SipSection() {
         <CardBody className="space-y-4">
           {hasOnlineClient ? (
             <div className="divide-y divide-line rounded-xl bg-panel-2 ring-1 ring-line">
-              {clients.map((c, i) => (
-                <div key={i} className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
-                  <div className="flex items-center gap-3">
-                    <div className="flex size-10 items-center justify-center rounded-xl bg-ok/10 text-ok ring-1 ring-ok/20">
-                      {c.user_agent.toLowerCase().includes("iphone") || c.user_agent.toLowerCase().includes("android") ? (
-                        <Smartphone className="size-5" />
-                      ) : (
-                        <Laptop className="size-5" />
-                      )}
-                    </div>
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <span className="font-semibold text-sm">分机 {c.username}</span>
-                        <span className="text-xs text-muted font-mono">({c.addr})</span>
+              {clients.map((c, i) => {
+                const boundExt = extensions.find((e) => e.username === c.username);
+                const boundDev = boundExt ? getDeviceLabel(boundExt.device_id) : "未指定";
+                return (
+                  <div key={i} className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="flex size-10 items-center justify-center rounded-xl bg-ok/10 text-ok ring-1 ring-ok/20">
+                        {c.user_agent.toLowerCase().includes("iphone") || c.user_agent.toLowerCase().includes("android") ? (
+                          <Smartphone className="size-5" />
+                        ) : (
+                          <Laptop className="size-5" />
+                        )}
                       </div>
-                      <p className="text-xs text-muted mt-0.5 font-mono break-all">{c.user_agent}</p>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="font-semibold text-sm">分机 {c.username}</span>
+                          <span className="text-xs text-muted font-mono">({c.addr})</span>
+                          <Badge tone="info" className="text-xs">
+                            出口绑定: {boundDev}
+                          </Badge>
+                        </div>
+                        <p className="text-xs text-muted mt-0.5 font-mono break-all">{c.user_agent}</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2 self-end sm:self-center">
+                      <Badge tone="ok" className="font-mono text-xs">
+                        保活中: {c.expires_in_sec}s
+                      </Badge>
                     </div>
                   </div>
-                  <div className="flex items-center gap-2 self-end sm:self-center">
-                    <Badge tone="ok" className="font-mono text-xs">
-                      保活中: {c.expires_in_sec}s
-                    </Badge>
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           ) : (
             <div className="rounded-xl bg-panel-2 p-5 text-center ring-1 ring-line">
               <Radio className="mx-auto size-8 text-subtle" />
               <p className="mt-2 text-sm font-medium">尚未连接软电话客户端</p>
               <p className="mt-1 text-xs text-muted max-w-md mx-auto">
-                请在手机（如 Linphone）或电脑上配置分机账号，连接成功后即可在此实时查看设备状态并免提接听 4G 来电。
+                请在手机（如 Zoiper / Groundwire）或电脑上配置分机账号，连接成功后即可在此实时查看设备状态并免提接听 4G 来电。
               </p>
             </div>
           )}
         </CardBody>
       </Card>
 
-      {/* 2. 连接参数一键复制 */}
+      {/* 2. 多分机管理与设备绑定卡片 (方案 B: 多分机独立绑定) */}
+      <Card>
+        <CardHeader
+          icon={KeyRound}
+          title="多分机账号与 4G 设备绑定管理"
+          subtitle="为每个 SIM 卡模组分配独立 SIP 分机，软电话拨号走绑定设备呼出，来电精准响铃对应分机"
+          action={
+            <div className="flex items-center gap-2">
+              {devices.length > 1 && (
+                <Button size="sm" variant="outline" icon={Wand2} onClick={handleAutoAssign}>
+                  一键为所有设备分配分机
+                </Button>
+              )}
+              <Button size="sm" variant="outline" icon={Plus} onClick={handleAddExtension}>
+                添加分机
+              </Button>
+            </div>
+          }
+        />
+        <CardBody className="space-y-4">
+          <div className="space-y-3">
+            {extensions.map((ext, idx) => {
+              const isOnline = clients.some((c) => c.username === ext.username);
+              const showPass = !!showPassMap[idx];
+              const paramText = `服务器: ${currentHost}:${sipPort}\n分机号: ${ext.username}\n密码: ${ext.password}\n传输协议: UDP\nSIP URI: sip:${ext.username}@${currentHost}:${sipPort}`;
+
+              return (
+                <div
+                  key={ext.id || idx}
+                  className="rounded-xl border bg-panel-2/60 p-4 transition-all hover:border-line-strong"
+                >
+                  <div className="flex flex-wrap items-center justify-between gap-2 pb-3 border-b border-line">
+                    <div className="flex items-center gap-2">
+                      <span className="font-semibold text-sm">分机 #{idx + 1}</span>
+                      {isOnline ? (
+                        <Badge tone="ok" className="text-xs">
+                          ● 在线
+                        </Badge>
+                      ) : (
+                        <Badge tone="muted" className="text-xs">
+                          离线
+                        </Badge>
+                      )}
+                      <span className="text-xs text-muted">
+                        (SIP: <code className="font-mono text-fg">{ext.username}</code>)
+                      </span>
+                    </div>
+
+                    <div className="flex items-center gap-1.5">
+                      <CopyButton text={paramText} label="复制配置参数" size="sm" />
+                      {extensions.length > 1 && (
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          icon={Trash2}
+                          onClick={() => handleRemoveExt(idx)}
+                          className="text-danger hover:text-danger hover:bg-danger/10"
+                        >
+                          删除
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="grid gap-3 pt-3 sm:grid-cols-2 lg:grid-cols-4">
+                    {/* 分机号 */}
+                    <div>
+                      <label className="text-xs text-muted block mb-1">分机用户名 (User)</label>
+                      <Input
+                        value={ext.username}
+                        onChange={(e) => handleUpdateExt(idx, "username", e.target.value.trim())}
+                        placeholder="例如 1001"
+                        className="font-mono"
+                      />
+                    </div>
+
+                    {/* 分机密码 */}
+                    <div>
+                      <div className="flex items-center justify-between mb-1">
+                        <label className="text-xs text-muted">分机密码 (Password)</label>
+                        <button
+                          type="button"
+                          onClick={() => toggleShowPass(idx)}
+                          className="text-[11px] text-muted hover:text-fg"
+                        >
+                          {showPass ? "隐藏" : "显示"}
+                        </button>
+                      </div>
+                      <Input
+                        type={showPass ? "text" : "password"}
+                        value={ext.password}
+                        onChange={(e) => handleUpdateExt(idx, "password", e.target.value.trim())}
+                        placeholder="分机密码"
+                        className="font-mono"
+                      />
+                    </div>
+
+                    {/* 绑定出口设备 */}
+                    <div>
+                      <label className="text-xs text-muted block mb-1">绑定的 4G 模组 / SIM 卡</label>
+                      <Select
+                        value={ext.device_id}
+                        onChange={(e) => handleUpdateExt(idx, "device_id", e.target.value)}
+                        className="w-full text-xs"
+                      >
+                        <option value="">全部设备 (默认 / 未指定)</option>
+                        {devices.map((d) => {
+                          const op = d.modem.operator ? ` [${d.modem.operator}]` : "";
+                          const tail = d.identity.iccid ? `..${d.identity.iccid.slice(-6)}` : d.id.slice(-6);
+                          return (
+                            <option key={d.id} value={d.id}>
+                              {d.name || d.id}
+                              {op} ({tail})
+                            </option>
+                          );
+                        })}
+                      </Select>
+                    </div>
+
+                    {/* 备注名称 */}
+                    <div>
+                      <label className="text-xs text-muted block mb-1">备注说明</label>
+                      <Input
+                        value={ext.name || ""}
+                        onChange={(e) => handleUpdateExt(idx, "name", e.target.value)}
+                        placeholder="如: 主力卡、香港 eSIM"
+                      />
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          <div className="pt-2 border-t border-line flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+            <Field
+              label="分机振铃超时（秒）"
+              hint="收到外线来电时，对应分机响铃超过此秒数未接听，系统将自动切入 AI 接听助手"
+            >
+              <div className="flex items-center gap-3">
+                <Input
+                  type="number"
+                  min={5}
+                  max={60}
+                  value={ringTimeout}
+                  onChange={(e) => setRingTimeout(Math.max(5, Math.min(60, Number(e.target.value))))}
+                  className="w-32"
+                />
+                <span className="text-sm text-muted">秒（建议 15~30 秒）</span>
+              </div>
+            </Field>
+
+            <Button
+              variant="primary"
+              icon={Save}
+              loading={mutation.isPending}
+              onClick={() => {
+                const cleaned = extensions.map((e) => ({
+                  ...e,
+                  username: e.username.trim(),
+                  password: e.password.trim(),
+                }));
+                if (cleaned.some((e) => !e.username || !e.password)) {
+                  toast.error("所有分机的账号和密码均不能为空");
+                  return;
+                }
+                mutation.mutate({
+                  extensions: cleaned,
+                  ring_timeout: Number(ringTimeout),
+                  username: cleaned[0].username,
+                  password: cleaned[0].password,
+                });
+              }}
+            >
+              保存分机设置
+            </Button>
+          </div>
+        </CardBody>
+      </Card>
+
+      {/* 3. 快速接入参数卡片 */}
       <Card>
         <CardHeader
           icon={Radio}
-          title="分机连接参数（客户端配置）"
-          subtitle="在 Linphone、MicroSIP 或其他 SIP 软电话中填入以下参数即可注册"
+          title="SIP 网关通用连接参数"
+          subtitle="在 Zoiper、MicroSIP 等客户端配置时所通用的服务器地址与音频协议"
         />
         <CardBody>
           <div className="grid gap-3 sm:grid-cols-2">
@@ -166,40 +436,6 @@ export function SipSection() {
                 <p className="font-mono text-sm font-medium mt-0.5 truncate">{currentHost}:{sipPort}</p>
               </div>
               <CopyButton text={`${currentHost}:${sipPort}`} label="复制" />
-            </div>
-
-            {/* 分机账号 */}
-            <div className="flex items-center justify-between rounded-xl bg-panel-2 p-3.5 ring-1 ring-line">
-              <div className="min-w-0 pr-2">
-                <span className="text-xs text-muted flex items-center gap-1.5">
-                  <User className="size-3.5" /> 分机账号 / 用户名 (User / Extension)
-                </span>
-                <p className="font-mono text-sm font-medium mt-0.5">{username}</p>
-              </div>
-              <CopyButton text={username} label="复制" />
-            </div>
-
-            {/* 分机密码 */}
-            <div className="flex items-center justify-between rounded-xl bg-panel-2 p-3.5 ring-1 ring-line">
-              <div className="min-w-0 pr-2">
-                <span className="text-xs text-muted flex items-center gap-1.5">
-                  <KeyRound className="size-3.5" /> 分机密码 (Password)
-                </span>
-                <div className="flex items-center gap-2 mt-0.5">
-                  <p className="font-mono text-sm font-medium">
-                    {showPass ? password : "••••••••"}
-                  </p>
-                  <button
-                    type="button"
-                    onClick={() => setShowPass(!showPass)}
-                    className="text-muted hover:text-fg transition p-0.5"
-                    title={showPass ? "隐藏密码" : "显示密码"}
-                  >
-                    {showPass ? <EyeOff className="size-3.5" /> : <Eye className="size-3.5" />}
-                  </button>
-                </div>
-              </div>
-              <CopyButton text={password} label="复制" />
             </div>
 
             {/* 传输协议 */}
@@ -224,81 +460,18 @@ export function SipSection() {
               <CopyButton text="PCMU, PCMA" label="复制" />
             </div>
 
-            {/* 一键完整 SIP URI */}
+            {/* 多分机说明 */}
             <div className="flex items-center justify-between rounded-xl bg-panel-2 p-3.5 ring-1 ring-line">
               <div className="min-w-0 pr-2">
                 <span className="text-xs text-muted flex items-center gap-1.5">
-                  <Shield className="size-3.5" /> 完整 SIP 地址 (SIP Address)
+                  <Shield className="size-3.5" /> 多分机路由隔离 (方案 B)
                 </span>
-                <p className="font-mono text-sm font-medium mt-0.5 truncate">
-                  sip:{username}@{currentHost}:{sipPort}
+                <p className="text-xs font-medium text-fg mt-0.5">
+                  已启用多分机隔离：每张卡独占分机号，呼出呼入自动精准路由
                 </p>
               </div>
-              <CopyButton text={`sip:${username}@${currentHost}:${sipPort}`} label="复制" />
+              <Badge tone="ok">已就绪</Badge>
             </div>
-          </div>
-        </CardBody>
-      </Card>
-
-      {/* 3. 分机参数修改与呼叫行为设置 */}
-      <Card>
-        <CardHeader
-          icon={KeyRound}
-          title="分机账号与呼叫策略修改"
-          subtitle="修改分机认证密码及呼叫转移超时，修改后立即在底层生效并持久保存"
-        />
-        <CardBody className="space-y-4">
-          <div className="grid gap-4 sm:grid-cols-2">
-            <Field label="分机账号" hint="默认为 1001，纯数字或英文">
-              <Input
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
-                placeholder="1001"
-              />
-            </Field>
-
-            <Field label="分机连接密码" hint="客户端连接校验密码">
-              <Input
-                type="text"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="设置分机连接密码"
-              />
-            </Field>
-          </div>
-
-          <Field
-            label="分机振铃超时（秒）"
-            hint="当模组收到外线来电时，分机软电话响铃超过此秒数未接听，系统将自动切入 AI 接听助手"
-          >
-            <div className="flex items-center gap-3">
-              <Input
-                type="number"
-                min={5}
-                max={60}
-                value={ringTimeout}
-                onChange={(e) => setRingTimeout(Math.max(5, Math.min(60, Number(e.target.value))))}
-                className="w-32"
-              />
-              <span className="text-sm text-muted">秒（建议 15~30 秒）</span>
-            </div>
-          </Field>
-
-          <div className="flex justify-end pt-2">
-            <Button
-              variant="primary"
-              icon={Save}
-              loading={mutation.isPending}
-              onClick={() => {
-                mutation.mutate({
-                  username: username.trim(),
-                  password: password.trim(),
-                  ring_timeout: Number(ringTimeout),
-                });
-              }}
-            >
-              保存 SIP 设置
-            </Button>
           </div>
         </CardBody>
       </Card>
@@ -353,13 +526,13 @@ export function SipSection() {
             <div className="space-y-2">
               <p className="font-medium text-fg flex items-center gap-2 text-[13px]">
                 <span className="flex size-5 items-center justify-center rounded-full bg-accent/20 text-accent text-xs font-semibold">2</span>
-                <span>填入账号基础信息：</span>
+                <span>填入对应分机信息（多分机模式下可添加多个 Account 分别对应不同 SIM 卡）：</span>
               </p>
               <div className="ml-7 divide-y divide-line rounded-xl bg-panel-solid ring-1 ring-line text-xs overflow-hidden">
                 <div className="flex items-center justify-between p-2.5">
                   <span className="text-muted w-36 shrink-0">Account name</span>
-                  <span className="text-fg flex-1 font-mono">自定义（如 SimCallHub）</span>
-                  <span className="text-subtle text-[11px]">随便填，方便识别</span>
+                  <span className="text-fg flex-1 font-mono">自定义（如 SIM1-1001、eSIM-1002）</span>
+                  <span className="text-subtle text-[11px]">方便识别是哪张卡</span>
                 </div>
                 <div className="flex items-center justify-between p-2.5 bg-accent/5">
                   <span className="text-muted w-36 shrink-0 font-medium text-fg">Domain</span>
@@ -368,38 +541,18 @@ export function SipSection() {
                 </div>
                 <div className="flex items-center justify-between p-2.5">
                   <span className="text-muted w-36 shrink-0 font-medium text-fg">User name</span>
-                  <span className="text-fg font-mono font-semibold flex-1">{username}</span>
-                  <CopyButton text={username} label="复制" size="sm" />
+                  <span className="text-fg flex-1 font-mono">上方列表对应的分机号（如 1001）</span>
+                  <span className="text-subtle text-[11px]">分机账号</span>
                 </div>
                 <div className="flex items-center justify-between p-2.5">
                   <span className="text-muted w-36 shrink-0 font-medium text-fg">Password</span>
-                  <span className="text-fg font-mono font-semibold flex-1">{password}</span>
-                  <CopyButton text={password} label="复制" size="sm" />
+                  <span className="text-fg flex-1 font-mono">上方列表对应的分机密码</span>
+                  <span className="text-subtle text-[11px]">分机密码</span>
                 </div>
                 <div className="flex items-center justify-between p-2.5">
-                  <span className="text-muted w-36 shrink-0 font-medium text-fg">Caller ID</span>
-                  <span className="text-fg font-mono flex-1">{currentHost}:{sipPort}</span>
-                  <CopyButton text={`${currentHost}:${sipPort}`} label="复制" size="sm" />
-                </div>
-                <div className="flex items-center justify-between p-2.5">
-                  <span className="text-muted w-36 shrink-0">Auth Username</span>
-                  <span className="text-fg font-mono flex-1">{username}</span>
-                  <span className="text-subtle text-[11px]">填 {username} 或留空跟随上面</span>
-                </div>
-                <div className="flex items-center justify-between p-2.5">
-                  <span className="text-muted w-36 shrink-0">Use Outbound Proxy</span>
-                  <span className="text-muted font-medium flex-1">关闭（灰色开关）</span>
-                  <span className="text-subtle text-[11px]">务必保持关闭</span>
-                </div>
-                <div className="flex items-center justify-between p-2.5">
-                  <span className="text-muted w-36 shrink-0">Outbound Proxy</span>
-                  <span className="text-subtle flex-1 italic">留空无需填写</span>
-                  <span className="text-subtle text-[11px]">留空</span>
-                </div>
-                <div className="flex items-center justify-between p-2.5">
-                  <span className="text-muted w-36 shrink-0">Enable video FMTP</span>
-                  <span className="text-muted flex-1">保持默认即可</span>
-                  <span className="text-subtle text-[11px]">默认</span>
+                  <span className="text-muted w-36 shrink-0">Caller ID</span>
+                  <span className="text-fg flex-1 font-mono">与 User name 保持一致</span>
+                  <span className="text-subtle text-[11px]">分机号</span>
                 </div>
               </div>
             </div>
@@ -408,15 +561,30 @@ export function SipSection() {
             <div className="space-y-2">
               <p className="font-medium text-fg flex items-center gap-2 text-[13px]">
                 <span className="flex size-5 items-center justify-center rounded-full bg-accent/20 text-accent text-xs font-semibold">3</span>
-                <span>Features（按键音 DTMF 设置）：</span>
+                <span>核心网络与保活设置（必填，防止后台断连）：</span>
               </p>
-              <div className="ml-7 rounded-xl bg-panel-solid p-3 ring-1 ring-line text-xs space-y-1.5">
-                <p className="text-fg font-medium">
-                  点击进入 <code className="bg-panel-2 px-1.5 py-0.5 rounded text-accent">Features</code> ➔ 选中 <code className="bg-panel-2 px-1.5 py-0.5 rounded text-ok font-semibold">inband</code>（带内音频），或保持 <code className="bg-panel-2 px-1.5 py-0.5 rounded">rfc-2833</code>。
-                </p>
-                <p className="text-subtle">
-                  💡 <strong>强烈推荐切换为 inband</strong>：确保拨号给运营商（如按 1 查话费、按键导航）时，EC20 模组能够准确接收 DTMF 频段按键音。
-                </p>
+              <div className="ml-7 rounded-xl bg-panel-solid p-3.5 ring-1 ring-line text-xs space-y-2">
+                <div className="flex items-start gap-2">
+                  <CheckCircle className="size-4 text-ok shrink-0 mt-0.5" />
+                  <div>
+                    <strong className="text-fg">Auth. username (认证用户名)：</strong>
+                    <span className="text-muted">必须与 User name 完全一致（如 1001），不可留空。</span>
+                  </div>
+                </div>
+                <div className="flex items-start gap-2">
+                  <CheckCircle className="size-4 text-ok shrink-0 mt-0.5" />
+                  <div>
+                    <strong className="text-fg">Network Settings ➔ Transport type：</strong>
+                    <span className="text-muted">选择 <strong>UDP</strong>。</span>
+                  </div>
+                </div>
+                <div className="flex items-start gap-2">
+                  <CheckCircle className="size-4 text-ok shrink-0 mt-0.5" />
+                  <div>
+                    <strong className="text-fg">Registration expiry：</strong>
+                    <span className="text-muted">推荐填写 <strong>300</strong> 秒（5分钟保活一次，稳定性最佳）。</span>
+                  </div>
+                </div>
               </div>
             </div>
 
@@ -424,129 +592,9 @@ export function SipSection() {
             <div className="space-y-2">
               <p className="font-medium text-fg flex items-center gap-2 text-[13px]">
                 <span className="flex size-5 items-center justify-center rounded-full bg-accent/20 text-accent text-xs font-semibold">4</span>
-                <span>Network Settings（网络与 NAT 关键设置）：</span>
+                <span>启用与注册：</span>
               </p>
-              <div className="ml-7 rounded-xl bg-panel-solid p-3.5 ring-1 ring-line text-xs space-y-3">
-                <div className="grid gap-2.5 sm:grid-cols-2">
-                  <div className="p-2.5 rounded-lg bg-panel-2 ring-1 ring-line">
-                    <div className="flex items-center justify-between">
-                      <span className="font-semibold text-fg">Enable IPv6</span>
-                      <Badge tone="muted">关闭（灰色）</Badge>
-                    </div>
-                    <p className="text-[11px] text-muted mt-1">
-                      原因：避免手机在双栈 Wi-Fi 下优先尝试走公网 IPv6 解析，忽略了局域网内网 IPv4。
-                    </p>
-                  </div>
-
-                  <div className="p-2.5 rounded-lg bg-panel-2 ring-1 ring-line">
-                    <div className="flex items-center justify-between">
-                      <span className="font-semibold text-fg">Transports</span>
-                      <Badge tone="ok">UDP</Badge>
-                    </div>
-                    <p className="text-[11px] text-muted mt-1">
-                      原因：标准 SIP 采用 UDP 5060，响应迅速无长连接握手包袱。
-                    </p>
-                  </div>
-
-                  <div className="p-2.5 rounded-lg bg-panel-2 ring-1 ring-line">
-                    <div className="flex items-center justify-between">
-                      <span className="font-semibold text-fg">Enable STUN</span>
-                      <Badge tone="bad">关闭（灰色）</Badge>
-                    </div>
-                    <p className="text-[11px] text-muted mt-1">
-                      原因：开启时手机会连公网 stun.zoiper.com 获取外网 IP。在家庭局域网内开启会导致手机把内网 IP 换成公网 IP 发送，造成注册失败或通话单向无声。局域网务必关闭 STUN。
-                    </p>
-                  </div>
-
-                  <div className="p-2.5 rounded-lg bg-panel-2 ring-1 ring-line">
-                    <div className="flex items-center justify-between">
-                      <span className="font-semibold text-fg">Enable on start</span>
-                      <Badge tone="ok">开启（绿色）</Badge>
-                    </div>
-                    <p className="text-[11px] text-muted mt-1">
-                      原因：保证打开 App 时自动连接注册，防止错过分机来电。
-                    </p>
-                  </div>
-
-                  <div className="p-2.5 rounded-lg bg-panel-2 ring-1 ring-line sm:col-span-2">
-                    <div className="flex items-center justify-between">
-                      <span className="font-semibold text-fg">TLS Settings</span>
-                      <Badge tone="muted">关闭（灰色）</Badge>
-                    </div>
-                    <p className="text-[11px] text-muted mt-1">
-                      原因：传输通道使用的是 UDP，底层未启用 SIP TLS 加密引擎，关闭避免额外校验开销。
-                    </p>
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-2 pt-1 text-ok font-medium">
-                  <CheckCircle className="size-4 shrink-0" />
-                  <span>设置完成后，点击右上角黑色【Save】保存，再点击左上角【&lt; Accounts】返回到上一页。</span>
-                </div>
-              </div>
-            </div>
-
-            {/* Step 5 */}
-            <div className="space-y-2">
-              <p className="font-medium text-fg flex items-center gap-2 text-[13px]">
-                <span className="flex size-5 items-center justify-center rounded-full bg-accent/20 text-accent text-xs font-semibold">5</span>
-                <span>Audio Codecs（音频编解码器设置）：</span>
-              </p>
-              <div className="ml-7 rounded-xl bg-panel-solid p-3.5 ring-1 ring-line text-xs space-y-2">
-                <div className="flex items-center gap-2">
-                  <Badge tone="ok">仅保留 u-law (PCMU) 与 a-law (PCMA)</Badge>
-                  <span className="text-muted">拖动至最顶部，关闭其他全部编码</span>
-                </div>
-                <div className="rounded-lg bg-panel-2 p-2.5 ring-1 ring-line text-muted leading-relaxed text-[11px] space-y-1">
-                  <p>
-                    • <strong>硬件原生匹配</strong>：移远 EC20 4G 模组与中国移动/联通/电信标准语音固网采用的正是 G.711 u-law（8000Hz）与 G.711 a-law，SimCallHub 原生直接处理这两个编码。
-                  </p>
-                  <p>
-                    • <strong>避免无效协商</strong>：GSM、Speex、iLBC 是上古时期的有损压缩编码，网关并不支持。若开启并排在前面，每次打电话都要先协商失败再退回 G.711，容易导致接通延迟或偶尔单向无声。仅留这两项可实现秒级秒通。
-                  </p>
-                </div>
-              </div>
-            </div>
-
-            {/* Step 6 */}
-            <div className="space-y-2">
-              <p className="font-medium text-fg flex items-center gap-2 text-[13px]">
-                <span className="flex size-5 items-center justify-center rounded-full bg-accent/20 text-accent text-xs font-semibold">6</span>
-                <span>Video codecs（视频编解码器设置）：</span>
-              </p>
-              <div className="ml-7 rounded-xl bg-panel-solid p-3.5 ring-1 ring-line text-xs space-y-2">
-                <div className="flex items-center gap-2">
-                  <Badge tone="muted">关闭 VP8 与 H.264（全部置灰）</Badge>
-                </div>
-                <p className="text-[11px] text-muted leading-relaxed">
-                  <strong>原因</strong>：SimCallHub 连接 4G 模块为纯蜂窝语音电话网关，运营商手机网络通话纯为音频，完全没有视频流。若开启 VP8，Zoiper 呼叫时会在 SIP SDP 信令中声明支持视频通道（m=video），不仅产生无效信令冗余和潜在兼容问题，还会唤醒手机摄像头硬件管线增加发热耗电。彻底关闭后纯语音直通，更省电且接听更迅速。
-                </p>
-              </div>
-            </div>
-
-            {/* Step 7 */}
-            <div className="space-y-2">
-              <p className="font-medium text-fg flex items-center gap-2 text-[13px]">
-                <span className="flex size-5 items-center justify-center rounded-full bg-accent/20 text-accent text-xs font-semibold">7</span>
-                <span>Instant Messaging（即时消息与状态）：</span>
-              </p>
-              <div className="ml-7 rounded-xl bg-panel-solid p-3.5 ring-1 ring-line text-xs space-y-2">
-                <div className="flex items-center gap-2">
-                  <Badge tone="muted">全部关闭（将 IM Enabled 关掉）</Badge>
-                </div>
-                <p className="text-[11px] text-muted leading-relaxed">
-                  <strong>原因</strong>：IM 是用于类似企业聊天软件（如 Skype）在 SIP 里收发文字聊天消息的；Presence 是探测对方是否“在线/离开/忙碌”。SimCallHub 是电话网关，您的短信收发在 Web 后台已有独立的分类管理系统，不需要通过 Zoiper 传文本。
-                </p>
-              </div>
-            </div>
-
-            {/* Step 8 */}
-            <div className="space-y-2">
-              <p className="font-medium text-fg flex items-center gap-2 text-[13px]">
-                <span className="flex size-5 items-center justify-center rounded-full bg-ok/20 text-ok text-xs font-semibold">8</span>
-                <span>一键注册与完成验证：</span>
-              </p>
-              <div className="ml-7 rounded-xl bg-ok/10 border border-ok/30 p-3.5 text-xs space-y-2">
+              <div className="ml-7 rounded-xl bg-panel-solid p-3.5 ring-1 ring-line text-xs space-y-1.5">
                 <p className="font-medium text-ok">
                   返回到账号设置主界面，点击大绿色按钮 <strong>【Register】</strong>。
                 </p>
@@ -578,14 +626,14 @@ export function SipSection() {
                 <strong>SIP Server / Proxy</strong> 填入 <code className="text-fg font-mono">{currentHost}:{sipPort}</code>；
               </li>
               <li>
-                <strong>Username / User</strong> 填入 <code className="text-fg font-mono">{username}</code>，密码填入设置的分机密码；
+                <strong>Username / User</strong> 填入对应的分机号，密码填入对应分机的密码；
               </li>
               <li>保存后即可随时在电脑上免提接听/拨打手机号码。</li>
             </ol>
           </div>
 
-          <Alert tone="ok" title="局域网与远程使用提示">
-            如果希望在离开家时用 4G/5G 网络接听家里的固话，只需在路由器端口映射或通过 Tailscale / DDNS 把 UDP 5060 端口映射出去，手机软电话就能随时随地在全球各地接听家里的 4G 电话！
+          <Alert tone="ok" title="多分机独立使用小贴士">
+            在手机 Zoiper 或电脑客户端中，您可以同时添加多个账号（例如添加一个账号 1001 绑定卡 1，再添加一个账号 1002 绑定 eSIM）。拨打电话时，在拨号盘直接切换想要使用的账号，即可自动使用对应的 SIM 卡呼出，完全独立互不影响！
           </Alert>
         </div>
       </Collapsible>

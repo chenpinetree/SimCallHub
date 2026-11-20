@@ -14,17 +14,27 @@ import (
 	"github.com/chenpinetree/SimCallHub/internal/agent/service"
 )
 
+// ExtensionConfig configures an individual SIP extension account and its hardware device binding.
+type ExtensionConfig struct {
+	ID       string `json:"id"`        // Unique internal ID, e.g. "ext_1001"
+	Username string `json:"username"`  // SIP extension number, e.g. "1001"
+	Password string `json:"password"`  // SIP extension password
+	DeviceID string `json:"device_id"` // Bound 4G modem DeviceID (empty = all / default)
+	Name     string `json:"name"`      // Optional friendly name, e.g. "主力卡 153", "eSIM Club"
+}
+
 // Config configures the embedded SIP PBX extension server.
 type Config struct {
-	Enabled      bool   `json:"enabled"`
-	ListenAddr   string `json:"listen"`       // e.g. "0.0.0.0:5060"
-	PublicIP     string `json:"public_ip"`    // IP reported in SDP (defaults to local LAN IP)
-	Domain       string `json:"domain"`       // SIP domain/realm (default "SimCallHub")
-	Username     string `json:"username"`     // Default extension username (e.g. "1001")
-	Password     string `json:"password"`     // Extension password
-	RTPPortStart int    `json:"rtp_start"`    // Starting RTP port (e.g. 20000)
-	RTPPortEnd   int    `json:"rtp_end"`      // Ending RTP port (e.g. 20100)
-	RingTimeout  int    `json:"ring_timeout"` // Seconds to ring extensions before letting AI answer (default 20)
+	Enabled      bool              `json:"enabled"`
+	ListenAddr   string            `json:"listen"`       // e.g. "0.0.0.0:5060"
+	PublicIP     string            `json:"public_ip"`    // IP reported in SDP (defaults to local LAN IP)
+	Domain       string            `json:"domain"`       // SIP domain/realm (default "SimCallHub")
+	Username     string            `json:"username"`     // Default extension username (e.g. "1001")
+	Password     string            `json:"password"`     // Extension password
+	RTPPortStart int               `json:"rtp_start"`    // Starting RTP port (e.g. 20000)
+	RTPPortEnd   int               `json:"rtp_end"`      // Ending RTP port (e.g. 20100)
+	RingTimeout  int               `json:"ring_timeout"` // Seconds to ring extensions before letting AI answer (default 20)
+	Extensions   []ExtensionConfig `json:"extensions"`   // Multiple extension accounts
 }
 
 // DefaultConfig returns recommended SIP server settings.
@@ -76,6 +86,29 @@ func NewServer(cfg Config, devices *service.Manager, log *slog.Logger) *Server {
 
 	reg := NewRegistrar(cfg.Domain, cfg.Username, cfg.Password)
 
+	// If extensions are configured, register all of them with their device bindings
+	if len(cfg.Extensions) > 0 {
+		accounts := make(map[string]string)
+		devs := make(map[string]string)
+		for _, ext := range cfg.Extensions {
+			if ext.Username != "" && ext.Password != "" {
+				accounts[ext.Username] = ext.Password
+				devs[ext.Username] = ext.DeviceID
+			}
+		}
+		reg.SetAccounts(accounts, devs)
+	} else if cfg.Username != "" && cfg.Password != "" {
+		cfg.Extensions = []ExtensionConfig{
+			{
+				ID:       "default",
+				Username: cfg.Username,
+				Password: cfg.Password,
+				DeviceID: "",
+				Name:     "默认分机",
+			},
+		}
+	}
+
 	return &Server{
 		cfg:         cfg,
 		devices:     devices,
@@ -88,13 +121,14 @@ func NewServer(cfg Config, devices *service.Manager, log *slog.Logger) *Server {
 
 // ServerStatus describes the runtime state of the SIP server.
 type ServerStatus struct {
-	Enabled     bool           `json:"enabled"`
-	ListenAddr  string         `json:"listen_addr"`
-	Domain      string         `json:"domain"`
-	Username    string         `json:"username"`
-	Password    string         `json:"password"`
-	RingTimeout int            `json:"ring_timeout"`
-	Clients     []ClientStatus `json:"clients"`
+	Enabled     bool              `json:"enabled"`
+	ListenAddr  string            `json:"listen_addr"`
+	Domain      string            `json:"domain"`
+	Username    string            `json:"username"`
+	Password    string            `json:"password"`
+	RingTimeout int               `json:"ring_timeout"`
+	Extensions  []ExtensionConfig `json:"extensions"`
+	Clients     []ClientStatus    `json:"clients"`
 }
 
 // Status returns current server configuration and connected extensions.
@@ -110,6 +144,7 @@ func (s *Server) Status() ServerStatus {
 		Username:    cfg.Username,
 		Password:    cfg.Password,
 		RingTimeout: cfg.RingTimeout,
+		Extensions:  cfg.Extensions,
 		Clients:     s.registrar.ListActive(),
 	}
 }
@@ -126,6 +161,30 @@ func (s *Server) UpdateConfig(username, password string, ringTimeout int) {
 	s.sessMu.Unlock()
 
 	s.registrar.UpdateAccount(oldUser, username, password)
+}
+
+// UpdateExtensions updates all extension accounts, bindings and ring timeout dynamically.
+func (s *Server) UpdateExtensions(exts []ExtensionConfig, ringTimeout int) {
+	s.sessMu.Lock()
+	if ringTimeout > 0 {
+		s.cfg.RingTimeout = ringTimeout
+	}
+	s.cfg.Extensions = exts
+	if len(exts) > 0 {
+		s.cfg.Username = exts[0].Username
+		s.cfg.Password = exts[0].Password
+	}
+	s.sessMu.Unlock()
+
+	accounts := make(map[string]string)
+	devices := make(map[string]string)
+	for _, ext := range exts {
+		if ext.Username != "" && ext.Password != "" {
+			accounts[ext.Username] = ext.Password
+			devices[ext.Username] = ext.DeviceID
+		}
+	}
+	s.registrar.SetAccounts(accounts, devices)
 }
 
 // Start begins listening on the SIP UDP socket and dispatches incoming messages.
@@ -344,7 +403,7 @@ func (s *Server) handleRegister(req *SIPMessage, from *net.UDPAddr) {
 
 func (s *Server) handleInvite(req *SIPMessage, from *net.UDPAddr) {
 	// Client is calling out through the cellular modem
-	_, ok := s.registrar.Authenticate(req)
+	callerUser, ok := s.registrar.Authenticate(req)
 	if !ok {
 		nonce := s.registrar.GenerateNonce()
 		resp := &SIPMessage{
@@ -370,13 +429,29 @@ func (s *Server) handleInvite(req *SIPMessage, from *net.UDPAddr) {
 	// Send 100 Trying
 	s.replySimple(req, from, 100, "Trying")
 
-	// Find available modem
+	// Find available modem (route to the modem bound to this SIP extension if configured)
 	modems := s.devices.Services()
 	if len(modems) == 0 {
 		s.replySimple(req, from, 503, "Service Unavailable (No 4G Modem)")
 		return
 	}
-	modem := modems[0]
+
+	var modem *service.Service
+	boundDeviceID := s.registrar.GetDeviceBinding(callerUser)
+	if boundDeviceID != "" {
+		for _, m := range modems {
+			if m.DeviceID() == boundDeviceID {
+				modem = m
+				break
+			}
+		}
+		if modem == nil {
+			s.log.Warn("bound modem for extension offline or not found, falling back to default", "extension", callerUser, "boundDeviceID", boundDeviceID)
+		}
+	}
+	if modem == nil {
+		modem = modems[0]
+	}
 
 	sdpInfo, err := ParseSDP(string(req.Body))
 	if err != nil {
@@ -640,9 +715,21 @@ func (s *Server) ringExtensions(event service.CallEvent) {
 	s.sessions[callID] = sess
 	s.sessMu.Unlock()
 
-	s.log.Info("ringing registered SIP extensions for incoming call", "caller", caller, "extensions", len(active))
-
+	// Filter active extensions: only ring those that match this modem DeviceID or have no specific binding
+	var targets []*Extension
 	for _, ext := range active {
+		binding := s.registrar.GetDeviceBinding(ext.Username)
+		if binding == "" || binding == event.Record.DeviceID {
+			targets = append(targets, ext)
+		}
+	}
+	if len(targets) == 0 {
+		targets = active
+	}
+
+	s.log.Info("ringing registered SIP extensions for incoming call", "caller", caller, "deviceID", event.Record.DeviceID, "targetExtensions", len(targets))
+
+	for _, ext := range targets {
 		localIP := s.publicIP(ext.Addr.IP)
 		sdpBody := GenerateSDP(localIP, rtpPort)
 
@@ -675,7 +762,7 @@ func (s *Server) ringExtensions(event service.CallEvent) {
 
 			if ok && sessRef != nil && !sessRef.IsActive() {
 				s.log.Info("SIP ring timeout exceeded, canceling extension invite for AI/voice fallback", "call_id", callID)
-				for _, ext := range active {
+				for _, ext := range targets {
 					cancelMsg := &SIPMessage{
 						IsResponse: false,
 						Method:     "CANCEL",

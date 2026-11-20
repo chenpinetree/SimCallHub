@@ -27,6 +27,7 @@ type Registrar struct {
 	mu         sync.RWMutex
 	realm      string
 	extensions map[string]string // username -> password
+	extDevices map[string]string // username -> bound deviceID (empty = all / default)
 	active     map[string]*Extension
 	nonces     map[string]time.Time
 }
@@ -39,6 +40,7 @@ func NewRegistrar(realm, defaultUser, defaultPass string) *Registrar {
 	r := &Registrar{
 		realm:      realm,
 		extensions: make(map[string]string),
+		extDevices: make(map[string]string),
 		active:     make(map[string]*Extension),
 		nonces:     make(map[string]time.Time),
 	}
@@ -48,11 +50,46 @@ func NewRegistrar(realm, defaultUser, defaultPass string) *Registrar {
 	return r
 }
 
-// AddAccount adds or updates an extension account.
+// AddAccount adds or updates an extension account with optional device binding.
 func (r *Registrar) AddAccount(username, password string) {
+	r.AddAccountWithDevice(username, password, "")
+}
+
+// AddAccountWithDevice adds or updates an extension account bound to a specific device.
+func (r *Registrar) AddAccountWithDevice(username, password, deviceID string) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.extensions[username] = password
+	r.extDevices[username] = deviceID
+}
+
+// GetDeviceBinding returns the device ID bound to an extension (empty if not bound).
+func (r *Registrar) GetDeviceBinding(username string) string {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return r.extDevices[username]
+}
+
+// SetAccounts replaces all extension accounts and device bindings.
+func (r *Registrar) SetAccounts(accounts map[string]string, devices map[string]string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	r.extensions = make(map[string]string)
+	r.extDevices = make(map[string]string)
+	for u, p := range accounts {
+		r.extensions[u] = p
+	}
+	for u, d := range devices {
+		r.extDevices[u] = d
+	}
+
+	// Purge active registrations for usernames that no longer exist
+	for u := range r.active {
+		if _, exists := r.extensions[u]; !exists {
+			delete(r.active, u)
+		}
+	}
 }
 
 // GetAccountPassword gets the password for an extension.

@@ -383,9 +383,10 @@ func runServe(args []string) error {
 	// Restore saved SIP config from store if present
 	if saved, err := st.Setting(ctx, "sip_config"); err == nil && saved != "" {
 		var sCfg struct {
-			Username    string `json:"username"`
-			Password    string `json:"password"`
-			RingTimeout int    `json:"ring_timeout"`
+			Username    string                `json:"username"`
+			Password    string                `json:"password"`
+			RingTimeout int                   `json:"ring_timeout"`
+			Extensions  []sip.ExtensionConfig `json:"extensions"`
 		}
 		if err := json.Unmarshal([]byte(saved), &sCfg); err == nil {
 			if sCfg.Username != "" {
@@ -396,6 +397,9 @@ func runServe(args []string) error {
 			}
 			if sCfg.RingTimeout > 0 {
 				sipCfg.RingTimeout = sCfg.RingTimeout
+			}
+			if len(sCfg.Extensions) > 0 {
+				sipCfg.Extensions = sCfg.Extensions
 			}
 		}
 	}
