@@ -23,7 +23,14 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
     throw new ApiError(0, "无法连接到SIMs Manager服务，请检查服务是否在运行");
   }
   const text = await resp.text();
-  const data = text ? JSON.parse(text) : {};
+  let data: { error?: string; code?: string } = {};
+  if (text) {
+    try {
+      data = JSON.parse(text);
+    } catch {
+      data = { error: text };
+    }
+  }
   if (!resp.ok) {
     if (resp.status === 401 && path !== "/api/login") {
       window.dispatchEvent(new Event("simcallhub:unauthorized"));

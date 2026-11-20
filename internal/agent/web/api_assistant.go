@@ -2,6 +2,8 @@ package web
 
 import (
 	"cmp"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -296,7 +298,9 @@ func (s *Server) generateVoicemail(w http.ResponseWriter, r *http.Request) {
 	}
 
 	now := time.Now()
-	id := fmt.Sprintf("vm-%d", now.UnixMilli())
+	var suffix [2]byte
+	_, _ = rand.Read(suffix[:])
+	id := fmt.Sprintf("vm-%d-%s", now.UnixMilli(), hex.EncodeToString(suffix[:]))
 	fileName := id + ".wav"
 	filePath := filepath.Join(s.VoicemailDir, fileName)
 	if err := os.WriteFile(filePath, wav, 0o600); err != nil {
@@ -304,12 +308,28 @@ func (s *Server) generateVoicemail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Re-read latest settings after long synthesis to avoid overwriting concurrent changes.
+	latest, err := s.Settings.Assistant(r.Context())
+	if err != nil {
+		s.serverError(w, err)
+		return
+	}
+	replaceIdx = -1
+	if req.ReplaceID != "" {
+		for i, it := range latest.Voicemail.Items {
+			if it.ID == req.ReplaceID {
+				replaceIdx = i
+				break
+			}
+		}
+	}
+
 	name := strings.TrimSpace(req.Name)
 	if name == "" {
 		if replaceIdx >= 0 {
-			name = stored.Voicemail.Items[replaceIdx].Name
+			name = latest.Voicemail.Items[replaceIdx].Name
 		} else {
-			name = fmt.Sprintf("语音留言 %d", len(stored.Voicemail.Items)+1)
+			name = fmt.Sprintf("语音留言 %d", len(latest.Voicemail.Items)+1)
 		}
 	}
 	item := assistant.VoicemailItem{
@@ -325,28 +345,28 @@ func (s *Server) generateVoicemail(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if replaceIdx >= 0 {
-		old := stored.Voicemail.Items[replaceIdx]
+		old := latest.Voicemail.Items[replaceIdx]
 		if old.FileName != "" && old.FileName != fileName {
 			_ = os.Remove(filepath.Join(s.VoicemailDir, filepath.Base(old.FileName)))
 		}
-		stored.Voicemail.Items[replaceIdx] = item
+		latest.Voicemail.Items[replaceIdx] = item
 	} else {
-		stored.Voicemail.Items = append(stored.Voicemail.Items, item)
+		latest.Voicemail.Items = append(latest.Voicemail.Items, item)
 	}
-	stored.Voicemail.ActiveID = item.ID
-	stored.Voicemail.Text = text
-	stored.Voicemail.Voice = synthCfg.Voice
-	stored.Voicemail.SpeechRate = synthCfg.SpeechRate
-	stored.Voicemail.Style = synthCfg.Style
-	stored.Voicemail.RingDelaySec = cfg.Voicemail.RingDelaySec
-	stored.Normalize()
+	latest.Voicemail.ActiveID = item.ID
+	latest.Voicemail.Text = text
+	latest.Voicemail.Voice = synthCfg.Voice
+	latest.Voicemail.SpeechRate = synthCfg.SpeechRate
+	latest.Voicemail.Style = synthCfg.Style
+	latest.Voicemail.RingDelaySec = cfg.Voicemail.RingDelaySec
+	latest.Normalize()
 
-	if err := s.Settings.SetAssistant(r.Context(), stored, nil); err != nil {
+	if err := s.Settings.SetAssistant(r.Context(), latest, nil); err != nil {
 		s.serverError(w, err)
 		return
 	}
 	s.Devices.Note(r.Context(), "info", fmt.Sprintf("已生成语音留言「%s」（%.1f 秒，保存至 data/voicemail/%s）", item.Name, dur, fileName))
-	writeJSON(w, http.StatusOK, s.assistantSettings(r, stored))
+	writeJSON(w, http.StatusOK, s.assistantSettings(r, latest))
 }
 
 func (s *Server) patchVoicemailItem(w http.ResponseWriter, r *http.Request) {

@@ -2,8 +2,14 @@ package sip
 
 import (
 	"bytes"
+	"io"
+	"log/slog"
 	"net"
+	"sync"
 	"testing"
+
+	"github.com/chenpinetree/SimCallHub/internal/agent/service"
+	"github.com/chenpinetree/SimCallHub/internal/agent/store"
 )
 
 func TestG711(t *testing.T) {
@@ -211,5 +217,71 @@ func TestRingTimeoutConfig(t *testing.T) {
 	srv.UpdateExtensions([]ExtensionConfig{{ID: "1", Username: "1001", Password: "pwd"}}, -1)
 	if srv.Status().RingTimeout != -1 {
 		t.Fatalf("expected ring timeout -1, got %d", srv.Status().RingTimeout)
+	}
+}
+
+func TestConcurrentConfigAndCallEvents(t *testing.T) {
+	srv := NewServer(DefaultConfig(), nil, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	var wg sync.WaitGroup
+	for i := 0; i < 20; i++ {
+		wg.Add(2)
+		go func(n int) {
+			defer wg.Done()
+			srv.UpdateExtensions([]ExtensionConfig{{ID: "1", Username: "1001", Password: "p"}}, n%3-1)
+			_ = srv.Status()
+		}(i)
+		go func() {
+			defer wg.Done()
+			srv.NotifyCallEvent(service.CallEvent{
+				Kind:   service.CallEventRinging,
+				Record: store.CallRecord{ID: 1, DeviceID: "dev1", Direction: "in", Number: "10086"},
+			})
+			srv.NotifyCallEvent(service.CallEvent{
+				Kind:   service.CallEventEnded,
+				Record: store.CallRecord{ID: 1, DeviceID: "dev1", Direction: "in", Number: "10086"},
+			})
+		}()
+	}
+	wg.Wait()
+}
+
+func TestResponseHandlingMultiTarget(t *testing.T) {
+	srv := NewServer(DefaultConfig(), nil, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	addr1 := &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: 5061}
+	addr2 := &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: 5062}
+	rtp, err := NewRTPStream("127.0.0.1", 0)
+	if err != nil {
+		t.Fatalf("NewRTPStream: %v", err)
+	}
+	defer rtp.Close()
+
+	sess := NewCallSession("call-multi@SimCallHub", DirectionInbound, nil, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	sess.RTPStream = rtp
+	sess.Targets = []*InviteTarget{
+		{Username: "1001", Addr: addr1, Branch: "z9hG4bKb1"},
+		{Username: "1002", Addr: addr2, Branch: "z9hG4bKb2"},
+	}
+	srv.sessMu.Lock()
+	srv.sessions[sess.CallID] = sess
+	srv.sessMu.Unlock()
+
+	// First target rejects (486): session should remain open for second target.
+	srv.handleResponse(&SIPMessage{
+		IsResponse: true,
+		StatusCode: 486,
+		Headers:    map[string]string{"Call-ID": sess.CallID},
+	}, addr1)
+	if sess.IsClosed() {
+		t.Fatal("session closed on single target rejection while another target is still ringing")
+	}
+
+	// Second target also rejects: now session should close and be removed.
+	srv.handleResponse(&SIPMessage{
+		IsResponse: true,
+		StatusCode: 486,
+		Headers:    map[string]string{"Call-ID": sess.CallID},
+	}, addr2)
+	if !sess.IsClosed() {
+		t.Fatal("session stayed open after all targets rejected")
 	}
 }

@@ -380,8 +380,8 @@ func runServe(args []string) error {
 		},
 	}, conn.fixed(), conn.base.Kind, st, log)
 
-	// Restore saved SIP config from store if present
-	if saved, err := st.Setting(ctx, "sip_config"); err == nil && saved != "" {
+	// Restore saved SIP config from store if present (encrypted via secret.Box or legacy plaintext)
+	if saved, ok, err := conf.SIPConfig(ctx); err == nil && ok && saved != "" {
 		var sCfg struct {
 			Username    string                `json:"username"`
 			Password    string                `json:"password"`

@@ -258,6 +258,11 @@ export function SipSection() {
           }
         />
         <CardBody className="space-y-4">
+          {extensions.some((e) => e.password === "12345678") && (
+            <Alert tone="warn" title="分机使用默认弱密码提醒">
+              检测到仍有分机使用默认密码 <code className="font-mono">12345678</code>，建议修改为高强度密码，防止局域网/公网暴露 5060 端口时被恶意盗打。
+            </Alert>
+          )}
           <div className="space-y-3">
             {extensions.map((ext, idx) => {
               const isOnline = clients.some((c) => c.username === ext.username);

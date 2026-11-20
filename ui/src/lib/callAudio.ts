@@ -92,7 +92,13 @@ async function attachMic(socket: WebSocket) {
       captureCtx = new AudioContext(); // the browser refused that rate
     }
     await captureCtx.audioWorklet.addModule("/pcm-worklet.js");
-    if (ws !== socket) return;
+    if (ws !== socket) {
+      captureCtx.close().catch(() => {});
+      captureCtx = null;
+      stream.getTracks().forEach((t) => t.stop());
+      if (mic === stream) mic = null;
+      return;
+    }
     recorder = new AudioWorkletNode(captureCtx, "pcm-recorder");
     micSource = captureCtx.createMediaStreamSource(stream);
     micSource.connect(recorder);

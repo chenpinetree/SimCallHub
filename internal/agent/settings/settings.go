@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"sync"
 
 	"github.com/chenpinetree/SimCallHub/internal/agent/assistant"
@@ -395,4 +396,28 @@ func (s *Settings) SetWebhook(ctx context.Context, kind notify.Kind, w notify.We
 	}
 	s.push = nil
 	return nil
+}
+
+const keySIPConfig = "sip_config"
+
+// SIPConfig reads the stored SIP configuration JSON, decrypting it via secret.Box
+// while transparently supporting legacy plaintext JSON records.
+func (s *Settings) SIPConfig(ctx context.Context) (string, bool, error) {
+	raw, err := s.store.Setting(ctx, keySIPConfig)
+	if err != nil || raw == "" {
+		return "", false, err
+	}
+	if strings.HasPrefix(strings.TrimSpace(raw), "{") {
+		return raw, true, nil
+	}
+	plain, err := s.box.Open(raw)
+	if err != nil {
+		return "", false, fmt.Errorf("解密 SIP 配置：%w", err)
+	}
+	return plain, true, nil
+}
+
+// SetSIPConfig encrypts and persists the SIP configuration JSON.
+func (s *Settings) SetSIPConfig(ctx context.Context, rawJSON string) error {
+	return s.setSecret(ctx, keySIPConfig, rawJSON)
 }

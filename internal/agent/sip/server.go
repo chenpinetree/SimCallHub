@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -131,11 +132,17 @@ type ServerStatus struct {
 	Clients     []ClientStatus    `json:"clients"`
 }
 
-// Status returns current server configuration and connected extensions.
-func (s *Server) Status() ServerStatus {
+// configSnapshot returns a thread-safe copy of the server configuration.
+func (s *Server) configSnapshot() Config {
 	s.sessMu.Lock()
 	cfg := s.cfg
 	s.sessMu.Unlock()
+	return cfg
+}
+
+// Status returns current server configuration and connected extensions.
+func (s *Server) Status() ServerStatus {
+	cfg := s.configSnapshot()
 
 	return ServerStatus{
 		Enabled:     cfg.Enabled,
@@ -426,7 +433,10 @@ func (s *Server) handleInvite(req *SIPMessage, from *net.UDPAddr) {
 	s.replySimple(req, from, 100, "Trying")
 
 	// Find available modem (route to the modem bound to this SIP extension if configured)
-	modems := s.devices.Services()
+	var modems []*service.Service
+	if s.devices != nil {
+		modems = s.devices.Services()
+	}
 	if len(modems) == 0 {
 		s.replySimple(req, from, 503, "Service Unavailable (No 4G Modem)")
 		return
@@ -450,7 +460,7 @@ func (s *Server) handleInvite(req *SIPMessage, from *net.UDPAddr) {
 	}
 
 	sdpInfo, err := ParseSDP(string(req.Body))
-	if err != nil {
+	if err != nil || net.ParseIP(sdpInfo.IP) == nil || sdpInfo.Port <= 0 {
 		s.replySimple(req, from, 400, "Bad SDP")
 		return
 	}
@@ -466,12 +476,14 @@ func (s *Server) handleInvite(req *SIPMessage, from *net.UDPAddr) {
 	sess := NewCallSession(callID, DirectionOutbound, modem, s.log)
 	sess.CallerNum = ExtractURIUsername(req.GetHeader("From"))
 	sess.CalleeNum = dialedNum
+	sess.RemoteUser = callerUser
 	sess.ClientAddr = from
+	sess.RTPStream = rtpStream
 	sess.FromHeader = req.GetHeader("From")
 	sess.ToHeader = req.GetHeader("To")
 	sess.ViaHeader = req.GetHeader("Via")
 	sess.CSeq = req.GetHeader("CSeq")
-	sess.Codec = sdpInfo.PayloadType
+	sess.SetCodec(sdpInfo.PayloadType)
 
 	s.sessMu.Lock()
 	s.sessions[callID] = sess
@@ -494,13 +506,15 @@ func (s *Server) handleInvite(req *SIPMessage, from *net.UDPAddr) {
 
 	// Dial cellular network in background
 	go func() {
-		dialCtx, dialCancel := context.WithTimeout(context.Background(), 30*time.Second)
+		dialCtx, dialCancel := context.WithTimeout(sess.ctx, 30*time.Second)
 		defer dialCancel()
 
 		s.log.Info("dialing out through 4G modem", "number", dialedNum, "call_id", callID)
 		if err := modem.Dial(dialCtx, dialedNum); err != nil {
 			s.log.Error("modem dial failed", "error", err)
-			s.replySimple(req, from, 503, "Modem Dial Failed: "+err.Error())
+			if !sess.IsClosed() {
+				s.replySimple(req, from, 503, "Modem Dial Failed: "+err.Error())
+			}
 			sess.Close()
 			s.sessMu.Lock()
 			delete(s.sessions, callID)
@@ -508,9 +522,17 @@ func (s *Server) handleInvite(req *SIPMessage, from *net.UDPAddr) {
 			return
 		}
 
+		// If the SIP client sent CANCEL while dialing, do not send 200 OK or start audio.
+		if sess.IsClosed() || sess.ctx.Err() != nil {
+			return
+		}
+
+		cfg := s.configSnapshot()
 		// Modem dialing succeeded -> send 200 OK with SDP
 		localIP := s.publicIP(from.IP)
 		sdpBody := GenerateSDP(localIP, rtpPort)
+		toTag := ";tag=" + hex.EncodeToString(randomBytes(4))
+		sess.ToHeader = req.GetHeader("To") + toTag
 
 		okResp := &SIPMessage{
 			IsResponse:   true,
@@ -519,10 +541,10 @@ func (s *Server) handleInvite(req *SIPMessage, from *net.UDPAddr) {
 			Headers: map[string]string{
 				"Via":            req.GetHeader("Via"),
 				"From":           req.GetHeader("From"),
-				"To":             req.GetHeader("To") + ";tag=" + hex.EncodeToString(randomBytes(4)),
+				"To":             sess.ToHeader,
 				"Call-ID":        callID,
 				"CSeq":           req.GetHeader("CSeq"),
-				"Contact":        fmt.Sprintf("<sip:%s@%s:%d>", s.cfg.Username, localIP, addrPort(s.conn.LocalAddr())),
+				"Contact":        fmt.Sprintf("<sip:%s@%s:%d>", cfg.Username, localIP, addrPort(s.conn.LocalAddr())),
 				"Content-Type":   "application/sdp",
 				"Content-Length": strconv.Itoa(len(sdpBody)),
 			},
@@ -589,6 +611,68 @@ func (s *Server) handleCancel(req *SIPMessage, from *net.UDPAddr) {
 	}
 }
 
+func (s *Server) localPort() int {
+	if s.conn != nil {
+		return addrPort(s.conn.LocalAddr())
+	}
+	return 5060
+}
+
+func (s *Server) cancelTargets(sess *CallSession, exceptAddr string) {
+	cfg := s.configSnapshot()
+	for _, t := range sess.Targets {
+		if exceptAddr != "" && t.Addr.String() == exceptAddr {
+			continue
+		}
+		if t.Rejected {
+			continue
+		}
+		cancelMsg := &SIPMessage{
+			IsResponse: false,
+			Method:     "CANCEL",
+			URI:        fmt.Sprintf("sip:%s@%s", t.Username, t.Addr.String()),
+			Headers: map[string]string{
+				"Via":     fmt.Sprintf("SIP/2.0/UDP %s:%d;branch=%s;rport", s.publicIP(t.Addr.IP), s.localPort(), t.Branch),
+				"From":    sess.FromHeader,
+				"To":      fmt.Sprintf("<sip:%s@%s>", t.Username, cfg.Domain),
+				"Call-ID": sess.CallID,
+				"CSeq":    "100 CANCEL",
+			},
+		}
+		_ = s.send(cancelMsg, t.Addr)
+	}
+}
+
+func (s *Server) sendBye(sess *CallSession) {
+	if sess.ClientAddr == nil {
+		return
+	}
+	cfg := s.configSnapshot()
+	localIP := s.publicIP(sess.ClientAddr.IP)
+	user := sess.RemoteUser
+	if user == "" {
+		user = cfg.Username
+	}
+	fromHdr, toHdr := sess.FromHeader, sess.ToHeader
+	if sess.Direction == DirectionOutbound {
+		// In outbound calls, server was the UAS (To), client was UAC (From).
+		fromHdr, toHdr = sess.ToHeader, sess.FromHeader
+	}
+	bye := &SIPMessage{
+		IsResponse: false,
+		Method:     "BYE",
+		URI:        fmt.Sprintf("sip:%s@%s", user, sess.ClientAddr.String()),
+		Headers: map[string]string{
+			"Via":     fmt.Sprintf("SIP/2.0/UDP %s:%d;branch=z9hG4bK%s;rport", localIP, s.localPort(), hex.EncodeToString(randomBytes(6))),
+			"From":    fromHdr,
+			"To":      toHdr,
+			"Call-ID": sess.CallID,
+			"CSeq":    "200 BYE",
+		},
+	}
+	_ = s.send(bye, sess.ClientAddr)
+}
+
 func (s *Server) handleResponse(resp *SIPMessage, from *net.UDPAddr) {
 	callID := resp.GetHeader("Call-ID")
 	s.sessMu.Lock()
@@ -603,29 +687,50 @@ func (s *Server) handleResponse(resp *SIPMessage, from *net.UDPAddr) {
 	case resp.StatusCode == 180:
 		s.log.Info("sip extension ringing", "call_id", callID, "client", from.String())
 	case resp.StatusCode == 200:
+		if sess.IsActive() || sess.IsClosed() {
+			return
+		}
+		cfg := s.configSnapshot()
 		// SIP extension answered the incoming call!
 		s.log.Info("sip extension answered incoming call!", "call_id", callID, "client", from.String())
+
+		seqNum, _, _ := strings.Cut(strings.TrimSpace(resp.GetHeader("CSeq")), " ")
+		if seqNum == "" {
+			seqNum = "100"
+		}
+		remoteUser := ExtractURIUsername(resp.GetHeader("To"))
+		if remoteUser == "" {
+			remoteUser = cfg.Username
+		}
 
 		// Send ACK back to the client
 		ack := &SIPMessage{
 			IsResponse: false,
 			Method:     "ACK",
-			URI:        fmt.Sprintf("sip:%s@%s", s.cfg.Username, from.String()),
+			URI:        fmt.Sprintf("sip:%s@%s", remoteUser, from.String()),
 			Headers: map[string]string{
-				"Via":     fmt.Sprintf("SIP/2.0/UDP %s;branch=z9hG4bK%s", s.publicIP(from.IP), hex.EncodeToString(randomBytes(6))),
+				"Via":     fmt.Sprintf("SIP/2.0/UDP %s:%d;branch=z9hG4bK%s;rport", s.publicIP(from.IP), s.localPort(), hex.EncodeToString(randomBytes(6))),
 				"From":    resp.GetHeader("From"),
 				"To":      resp.GetHeader("To"),
 				"Call-ID": callID,
-				"CSeq":    resp.GetHeader("CSeq") + " ACK",
+				"CSeq":    seqNum + " ACK",
 			},
 		}
 		_ = s.send(ack, from)
 
+		// Cancel any other ringing extensions for this call.
+		s.cancelTargets(sess, from.String())
+
 		// Parse SDP answer from extension
 		sdpInfo, err := ParseSDP(string(resp.Body))
-		if err == nil && sess.RTPStream != nil {
-			sess.Codec = sdpInfo.PayloadType
-			remoteRTP := &net.UDPAddr{IP: net.ParseIP(sdpInfo.IP), Port: sdpInfo.Port}
+		remoteIP := net.ParseIP(sdpInfo.IP)
+		if err == nil && remoteIP != nil && sdpInfo.Port > 0 && sess.RTPStream != nil {
+			sess.ClientAddr = from
+			sess.RemoteUser = remoteUser
+			sess.FromHeader = resp.GetHeader("From")
+			sess.ToHeader = resp.GetHeader("To")
+			sess.SetCodec(sdpInfo.PayloadType)
+			remoteRTP := &net.UDPAddr{IP: remoteIP, Port: sdpInfo.Port}
 
 			// Answer the cellular modem
 			if sess.ModemSvc != nil {
@@ -639,39 +744,76 @@ func (s *Server) handleResponse(resp *SIPMessage, from *net.UDPAddr) {
 			sess.StartAudioBridge(sess.RTPStream, remoteRTP)
 		}
 	case resp.StatusCode >= 400:
-		s.log.Info("sip extension rejected or failed call", "code", resp.StatusCode, "call_id", callID)
-		sess.Close()
-		s.sessMu.Lock()
-		delete(s.sessions, callID)
-		s.sessMu.Unlock()
+		s.log.Info("sip extension rejected or failed call", "code", resp.StatusCode, "call_id", callID, "client", from.String())
+		allRejected := true
+		for _, t := range sess.Targets {
+			if t.Addr.String() == from.String() {
+				t.Rejected = true
+			}
+			if !t.Rejected {
+				allRejected = false
+			}
+		}
+		if allRejected {
+			sess.Close()
+			s.sessMu.Lock()
+			delete(s.sessions, callID)
+			s.sessMu.Unlock()
+		}
 	}
 }
 
-// NotifyCallEvent is triggered when a cellular call state changes (e.g. Ringing or Missed).
+// NotifyCallEvent is triggered when a cellular call state changes (e.g. Ringing, Missed, or Ended).
 func (s *Server) NotifyCallEvent(event service.CallEvent) {
-	if !s.cfg.Enabled {
+	if !s.configSnapshot().Enabled {
 		return
 	}
 
-	if event.Kind == service.CallEventRinging && event.Record.Direction == "in" {
-		if !event.Repeat {
+	switch event.Kind {
+	case service.CallEventRinging:
+		if event.Record.Direction == "in" && !event.Repeat {
 			s.ringExtensions(event)
 		}
-	} else if event.Kind == service.CallEventMissed {
+	case service.CallEventMissed:
 		// Cancel any active ringing sessions for this call
 		s.sessMu.Lock()
+		var toCancel []*CallSession
 		for id, sess := range s.sessions {
 			if sess.Direction == DirectionInbound && !sess.IsActive() {
-				sess.Close()
+				toCancel = append(toCancel, sess)
 				delete(s.sessions, id)
 			}
 		}
 		s.sessMu.Unlock()
+		for _, sess := range toCancel {
+			s.cancelTargets(sess, "")
+			sess.Close()
+		}
+	case service.CallEventEnded:
+		// Cellular side hung up or rejected: send BYE to active SIP sessions for this device.
+		s.sessMu.Lock()
+		var toEnd []*CallSession
+		for id, sess := range s.sessions {
+			if sess.ModemSvc == nil || sess.ModemSvc.DeviceID() == event.Record.DeviceID {
+				toEnd = append(toEnd, sess)
+				delete(s.sessions, id)
+			}
+		}
+		s.sessMu.Unlock()
+		for _, sess := range toEnd {
+			if sess.IsActive() {
+				s.sendBye(sess)
+			} else if sess.Direction == DirectionInbound {
+				s.cancelTargets(sess, "")
+			}
+			sess.Close()
+		}
 	}
 }
 
 // ringExtensions sends an INVITE with SDP offer to all currently registered SIP clients.
 func (s *Server) ringExtensions(event service.CallEvent) {
+	cfg := s.configSnapshot()
 	caller := event.Record.Number
 	if caller == "" {
 		caller = "Unknown"
@@ -691,12 +833,14 @@ func (s *Server) ringExtensions(event service.CallEvent) {
 	}
 
 	// 1. RingTimeout == 0: 立即自动切入 AI 接听助手 (分机不振铃)
-	if s.cfg.RingTimeout == 0 {
+	if cfg.RingTimeout == 0 {
 		s.log.Info("SIP ring timeout is 0 (immediate AI takeover), triggering AI assistant without ringing SIP extensions", "call_id", event.Record.ID, "deviceID", event.Record.DeviceID)
 		if modem != nil {
 			go func() {
 				time.Sleep(300 * time.Millisecond)
-				_ = modem.AnswerWithAssistant(context.Background())
+				ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+				defer cancel()
+				_ = modem.AnswerWithAssistant(ctx)
 			}()
 		}
 		return
@@ -708,7 +852,7 @@ func (s *Server) ringExtensions(event service.CallEvent) {
 		return
 	}
 
-	callID := hex.EncodeToString(randomBytes(16)) + "@" + s.cfg.Domain
+	callID := hex.EncodeToString(randomBytes(16)) + "@" + cfg.Domain
 	rtpPort := s.allocRTPPort()
 	rtpStream, err := NewRTPStream("0.0.0.0", rtpPort)
 	if err != nil {
@@ -719,10 +863,7 @@ func (s *Server) ringExtensions(event service.CallEvent) {
 	sess := NewCallSession(callID, DirectionInbound, modem, s.log)
 	sess.CallerNum = caller
 	sess.RTPStream = rtpStream
-
-	s.sessMu.Lock()
-	s.sessions[callID] = sess
-	s.sessMu.Unlock()
+	sess.FromHeader = fmt.Sprintf(`"%s" <sip:%s@%s>;tag=%s`, caller, caller, cfg.Domain, hex.EncodeToString(randomBytes(4)))
 
 	// Filter active extensions: only ring those that match this modem DeviceID or have no specific binding
 	var targets []*Extension
@@ -736,80 +877,102 @@ func (s *Server) ringExtensions(event service.CallEvent) {
 		targets = active
 	}
 
-	s.log.Info("ringing registered SIP extensions for incoming call", "caller", caller, "deviceID", event.Record.DeviceID, "targetExtensions", len(targets))
-
-	// If SIP extensions are ringing, suppress premature assistant pickup
-	if modem != nil {
-		_ = modem.SkipAssistant(context.Background())
+	for _, ext := range targets {
+		sess.Targets = append(sess.Targets, &InviteTarget{
+			Username: ext.Username,
+			Addr:     ext.Addr,
+			Branch:   "z9hG4bK" + hex.EncodeToString(randomBytes(6)),
+		})
 	}
 
-	for _, ext := range targets {
-		localIP := s.publicIP(ext.Addr.IP)
+	s.sessMu.Lock()
+	s.sessions[callID] = sess
+	s.sessMu.Unlock()
+
+	s.log.Info("ringing registered SIP extensions for incoming call", "caller", caller, "deviceID", event.Record.DeviceID, "targetExtensions", len(targets))
+
+	// Suppress premature assistant pickup asynchronously to avoid deadlocking the Service actor loop!
+	if modem != nil {
+		go func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			_ = modem.SkipAssistant(ctx)
+		}()
+	}
+
+	for _, t := range sess.Targets {
+		localIP := s.publicIP(t.Addr.IP)
 		sdpBody := GenerateSDP(localIP, rtpPort)
 
 		invite := &SIPMessage{
 			IsResponse: false,
 			Method:     "INVITE",
-			URI:        fmt.Sprintf("sip:%s@%s", ext.Username, ext.Addr.String()),
+			URI:        fmt.Sprintf("sip:%s@%s", t.Username, t.Addr.String()),
 			Headers: map[string]string{
-				"Via":            fmt.Sprintf("SIP/2.0/UDP %s:%d;branch=z9hG4bK%s;rport", localIP, addrPort(s.conn.LocalAddr()), hex.EncodeToString(randomBytes(6))),
-				"From":           fmt.Sprintf(`"%s" <sip:%s@%s>;tag=%s`, caller, caller, s.cfg.Domain, hex.EncodeToString(randomBytes(4))),
-				"To":             fmt.Sprintf("<sip:%s@%s>", ext.Username, s.cfg.Domain),
+				"Via":            fmt.Sprintf("SIP/2.0/UDP %s:%d;branch=%s;rport", localIP, s.localPort(), t.Branch),
+				"From":           sess.FromHeader,
+				"To":             fmt.Sprintf("<sip:%s@%s>", t.Username, cfg.Domain),
 				"Call-ID":        callID,
 				"CSeq":           "100 INVITE",
-				"Contact":        fmt.Sprintf("<sip:%s@%s:%d>", s.cfg.Username, localIP, addrPort(s.conn.LocalAddr())),
+				"Contact":        fmt.Sprintf("<sip:%s@%s:%d>", cfg.Username, localIP, s.localPort()),
 				"Content-Type":   "application/sdp",
 				"Content-Length": strconv.Itoa(len(sdpBody)),
 			},
 			Body: []byte(sdpBody),
 		}
-		_ = s.send(invite, ext.Addr)
+		_ = s.send(invite, t.Addr)
 	}
 
-	// Ring timeout watchdog: if RingTimeout > 0 and not answered within RingTimeout, cancel INVITE so SimCallHub AI can take over
-	if s.cfg.RingTimeout > 0 {
-		go func() {
-			select {
-			case <-time.After(time.Duration(s.cfg.RingTimeout) * time.Second):
-				s.sessMu.Lock()
-				sessRef, ok := s.sessions[callID]
-				s.sessMu.Unlock()
-
-				if ok && sessRef != nil && !sessRef.IsActive() {
-					s.log.Info("SIP ring timeout exceeded, canceling extension invite for AI/voice fallback", "call_id", callID, "timeout_sec", s.cfg.RingTimeout)
-					for _, ext := range targets {
-						cancelMsg := &SIPMessage{
-							IsResponse: false,
-							Method:     "CANCEL",
-							URI:        fmt.Sprintf("sip:%s@%s", ext.Username, ext.Addr.String()),
-							Headers: map[string]string{
-								"Via":     fmt.Sprintf("SIP/2.0/UDP %s:%d;branch=z9hG4bKcancel;rport", s.publicIP(ext.Addr.IP), addrPort(s.conn.LocalAddr())),
-								"From":    fmt.Sprintf(`"%s" <sip:%s@%s>`, caller, caller, s.cfg.Domain),
-								"To":      fmt.Sprintf("<sip:%s@%s>", ext.Username, s.cfg.Domain),
-								"Call-ID": callID,
-								"CSeq":    "100 CANCEL",
-							},
-						}
-						_ = s.send(cancelMsg, ext.Addr)
-					}
-					sessRef.Close()
-					s.sessMu.Lock()
-					delete(s.sessions, callID)
-					s.sessMu.Unlock()
-
-					// Hand over to AI assistant
-					if modem != nil {
-						go func() {
-							_ = modem.AnswerWithAssistant(context.Background())
-						}()
-					}
-				}
-			case <-sess.ctx.Done():
-				return
+	// Watchdog: cancel ringing INVITEs when event.Done closes (e.g. answered on Web/AI) or when RingTimeout expires.
+	go func(timeoutSec int) {
+		var timerCh <-chan time.Time
+		if timeoutSec > 0 {
+			timer := time.NewTimer(time.Duration(timeoutSec) * time.Second)
+			defer timer.Stop()
+			timerCh = timer.C
+		}
+		select {
+		case <-timerCh:
+			s.sessMu.Lock()
+			sessRef, ok := s.sessions[callID]
+			if ok && sessRef != nil && !sessRef.IsActive() {
+				delete(s.sessions, callID)
+			} else {
+				ok = false
 			}
-		}()
-	}
-	// Note: if RingTimeout < 0, watchdog is omitted, so extensions ring until answered or hung up without AI interruption.
+			s.sessMu.Unlock()
+
+			if ok {
+				s.log.Info("SIP ring timeout exceeded, canceling extension invite for AI/voice fallback", "call_id", callID, "timeout_sec", timeoutSec)
+				s.cancelTargets(sessRef, "")
+				sessRef.Close()
+				if modem != nil {
+					go func() {
+						ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+						defer cancel()
+						_ = modem.AnswerWithAssistant(ctx)
+					}()
+				}
+			}
+		case <-event.Done:
+			// Call stopped ringing (answered on Web UI / AI or ended); cancel unanswered SIP rings.
+			s.sessMu.Lock()
+			sessRef, ok := s.sessions[callID]
+			if ok && sessRef != nil && !sessRef.IsActive() {
+				delete(s.sessions, callID)
+			} else {
+				ok = false
+			}
+			s.sessMu.Unlock()
+			if ok {
+				s.cancelTargets(sessRef, "")
+				sessRef.Close()
+			}
+		case <-sess.ctx.Done():
+			return
+		}
+	}(cfg.RingTimeout)
+	// Note: if RingTimeout < 0, timerCh is nil so extensions ring until answered, rejected, or event.Done closes.
 }
 
 func randomBytes(n int) []byte {

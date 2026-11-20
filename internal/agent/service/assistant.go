@@ -278,6 +278,14 @@ func (s *Service) AnswerWithAssistant(ctx context.Context) error {
 		if t == nil {
 			return errors.New("没有正在响铃的来电")
 		}
+		if _, ok := s.opts.Assistant.AnswerAfter(ctx, s.DeviceID(), t.info.Number); !ok {
+			return errors.New("AI 接听助手或语音留言未启用或配置未就绪")
+		}
+		if ready, err := s.opts.Assistant.Ready(s.DeviceID()); err != nil {
+			return err
+		} else if !ready {
+			return errors.New("AI 接听助手尚未连接就绪")
+		}
 		return s.assistantAnswer(ctx, m, t)
 	})
 }

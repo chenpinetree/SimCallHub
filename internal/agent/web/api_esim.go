@@ -55,7 +55,7 @@ func (s *Server) deviceESimEnable(w http.ResponseWriter, r *http.Request) {
 		return esimManager.EnableProfile(ctx, m, req.ICCID)
 	})
 	if err != nil {
-		s.serverError(w, err)
+		s.opError(w, err)
 		return
 	}
 
@@ -81,7 +81,7 @@ func (s *Server) deviceESimDisable(w http.ResponseWriter, r *http.Request) {
 		return esimManager.DisableProfile(ctx, m, req.ICCID)
 	})
 	if err != nil {
-		s.serverError(w, err)
+		s.opError(w, err)
 		return
 	}
 
@@ -107,7 +107,7 @@ func (s *Server) deviceESimDelete(w http.ResponseWriter, r *http.Request) {
 		return esimManager.DeleteProfile(ctx, m, req.ICCID)
 	})
 	if err != nil {
-		s.serverError(w, err)
+		s.opError(w, err)
 		return
 	}
 
@@ -134,7 +134,7 @@ func (s *Server) deviceESimNickname(w http.ResponseWriter, r *http.Request) {
 		return esimManager.SetNickname(ctx, m, req.ICCID, req.Nickname)
 	})
 	if err != nil {
-		s.serverError(w, err)
+		s.opError(w, err)
 		return
 	}
 
