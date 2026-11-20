@@ -11,7 +11,7 @@ import (
 type sipUpdateRequest struct {
 	Username    string                `json:"username"`
 	Password    string                `json:"password"`
-	RingTimeout int                   `json:"ring_timeout"`
+	RingTimeout *int                  `json:"ring_timeout"`
 	Extensions  []sip.ExtensionConfig `json:"extensions"`
 }
 
@@ -40,9 +40,16 @@ func (s *Server) putSIP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if req.RingTimeout <= 0 {
-		req.RingTimeout = 20
+	ringTimeout := 20
+	if req.RingTimeout != nil {
+		ringTimeout = *req.RingTimeout
 	}
+	if ringTimeout < -1 {
+		ringTimeout = -1
+	} else if ringTimeout > 120 {
+		ringTimeout = 60
+	}
+	req.RingTimeout = &ringTimeout
 
 	if len(req.Extensions) > 0 {
 		var cleaned []sip.ExtensionConfig
@@ -64,7 +71,7 @@ func (s *Server) putSIP(w http.ResponseWriter, r *http.Request) {
 		req.Password = cleaned[0].Password
 
 		if s.SIP != nil {
-			s.SIP.UpdateExtensions(cleaned, req.RingTimeout)
+			s.SIP.UpdateExtensions(cleaned, ringTimeout)
 		}
 	} else {
 		req.Username = strings.TrimSpace(req.Username)
@@ -78,7 +85,7 @@ func (s *Server) putSIP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if s.SIP != nil {
-			s.SIP.UpdateConfig(req.Username, req.Password, req.RingTimeout)
+			s.SIP.UpdateConfig(req.Username, req.Password, ringTimeout)
 		}
 	}
 
