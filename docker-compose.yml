@@ -2,7 +2,7 @@ version: '3.8'
 
 services:
   simcallhub:
-    image: simcallhub:local
+    image: simcallhub:v1.2.3
     container_name: simcallhub
     restart: unless-stopped
     privileged: true
