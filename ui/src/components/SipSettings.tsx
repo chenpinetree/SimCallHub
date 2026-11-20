@@ -500,7 +500,7 @@ export function SipSection() {
               </span>
             </div>
 
-            {/* Step 1 */}
+            {/* 1. 新建账号 */}
             <div className="space-y-2">
               <p className="font-medium text-fg flex items-center gap-2 text-[13px]">
                 <span className="flex size-5 items-center justify-center rounded-full bg-accent/20 text-accent text-xs font-semibold">1</span>
@@ -513,7 +513,7 @@ export function SipSection() {
                 <code className="text-fg font-semibold bg-panel-2 px-1.5 py-0.5 rounded">Accounts</code>
                 <span>➔ 点击右上角</span>
                 <code className="text-fg font-semibold bg-panel-2 px-1.5 py-0.5 rounded">+</code>
-                <span>➔ 弹窗选择</span>
+                <span>➔ 弹出的窗口选择</span>
                 <code className="text-ok font-semibold bg-panel-2 px-1.5 py-0.5 rounded">Yes</code>
                 <span>➔ 选择</span>
                 <code className="text-fg font-semibold bg-panel-2 px-1.5 py-0.5 rounded">Manual configuration</code>
@@ -522,88 +522,209 @@ export function SipSection() {
               </div>
             </div>
 
-            {/* Step 2 */}
+            {/* 2. 基础连接参数 */}
             <div className="space-y-2">
               <p className="font-medium text-fg flex items-center gap-2 text-[13px]">
                 <span className="flex size-5 items-center justify-center rounded-full bg-accent/20 text-accent text-xs font-semibold">2</span>
-                <span>填入对应分机信息（多分机模式下可添加多个 Account 分别对应不同 SIM 卡）：</span>
+                <span>填入基本连接参数：</span>
               </p>
               <div className="ml-7 divide-y divide-line rounded-xl bg-panel-solid ring-1 ring-line text-xs overflow-hidden">
                 <div className="flex items-center justify-between p-2.5">
-                  <span className="text-muted w-36 shrink-0">Account name</span>
-                  <span className="text-fg flex-1 font-mono">自定义（如 SIM1-1001、eSIM-1002）</span>
-                  <span className="text-subtle text-[11px]">方便识别是哪张卡</span>
+                  <span className="text-muted w-44 shrink-0 font-medium">Account name</span>
+                  <span className="text-fg flex-1 font-mono">账号别名，随便填，方便自己识别（如 SIM1-1001）</span>
                 </div>
                 <div className="flex items-center justify-between p-2.5 bg-accent/5">
-                  <span className="text-muted w-36 shrink-0 font-medium text-fg">Domain</span>
+                  <span className="text-muted w-44 shrink-0 font-medium text-fg">Domain</span>
                   <span className="text-accent font-mono font-semibold flex-1">{currentHost}:{sipPort}</span>
                   <CopyButton text={`${currentHost}:${sipPort}`} label="复制" size="sm" />
                 </div>
                 <div className="flex items-center justify-between p-2.5">
-                  <span className="text-muted w-36 shrink-0 font-medium text-fg">User name</span>
-                  <span className="text-fg flex-1 font-mono">上方列表对应的分机号（如 1001）</span>
-                  <span className="text-subtle text-[11px]">分机账号</span>
+                  <span className="text-muted w-44 shrink-0 font-medium text-fg">User name</span>
+                  <span className="text-fg flex-1 font-mono">填写 分机用户名 (User)（如上方列表中的分机号）</span>
                 </div>
                 <div className="flex items-center justify-between p-2.5">
-                  <span className="text-muted w-36 shrink-0 font-medium text-fg">Password</span>
-                  <span className="text-fg flex-1 font-mono">上方列表对应的分机密码</span>
-                  <span className="text-subtle text-[11px]">分机密码</span>
+                  <span className="text-muted w-44 shrink-0 font-medium text-fg">Password</span>
+                  <span className="text-fg flex-1 font-mono">填写 分机密码 (Password)</span>
                 </div>
                 <div className="flex items-center justify-between p-2.5">
-                  <span className="text-muted w-36 shrink-0">Caller ID</span>
+                  <span className="text-muted w-44 shrink-0">Caller ID</span>
                   <span className="text-fg flex-1 font-mono">与 User name 保持一致</span>
-                  <span className="text-subtle text-[11px]">分机号</span>
+                </div>
+                <div className="flex items-center justify-between p-2.5">
+                  <span className="text-muted w-44 shrink-0">Auth Username</span>
+                  <span className="text-subtle flex-1 font-mono">留空，默认会跟随上面的 User name</span>
+                </div>
+                <div className="flex items-center justify-between p-2.5">
+                  <span className="text-muted w-44 shrink-0">Use Outbound Proxy</span>
+                  <span className="text-muted flex-1 font-mono">保持关闭（灰色关闭状态）</span>
+                </div>
+                <div className="flex items-center justify-between p-2.5">
+                  <span className="text-muted w-44 shrink-0">Outbound Proxy</span>
+                  <span className="text-subtle flex-1 font-mono">留空无需填写</span>
+                </div>
+                <div className="flex items-center justify-between p-2.5">
+                  <span className="text-muted w-44 shrink-0">Enable video FMTP</span>
+                  <span className="text-muted flex-1 font-mono">保持默认即可</span>
                 </div>
               </div>
             </div>
 
-            {/* Step 3 */}
+            {/* 3. 音频信令配置 (Features) */}
             <div className="space-y-2">
               <p className="font-medium text-fg flex items-center gap-2 text-[13px]">
                 <span className="flex size-5 items-center justify-center rounded-full bg-accent/20 text-accent text-xs font-semibold">3</span>
-                <span>核心网络与保活设置（必填，防止后台断连）：</span>
+                <span>进入 Features (特性功能配置)：</span>
               </p>
-              <div className="ml-7 rounded-xl bg-panel-solid p-3.5 ring-1 ring-line text-xs space-y-2">
+              <div className="ml-7 rounded-xl bg-panel-solid p-3.5 ring-1 ring-line text-xs space-y-1.5">
                 <div className="flex items-start gap-2">
-                  <CheckCircle className="size-4 text-ok shrink-0 mt-0.5" />
+                  <CheckCircle className="size-4 text-accent shrink-0 mt-0.5" />
                   <div>
-                    <strong className="text-fg">Auth. username (认证用户名)：</strong>
-                    <span className="text-muted">必须与 User name 完全一致（如 1001），不可留空。</span>
-                  </div>
-                </div>
-                <div className="flex items-start gap-2">
-                  <CheckCircle className="size-4 text-ok shrink-0 mt-0.5" />
-                  <div>
-                    <strong className="text-fg">Network Settings ➔ Transport type：</strong>
-                    <span className="text-muted">选择 <strong>UDP</strong>。</span>
-                  </div>
-                </div>
-                <div className="flex items-start gap-2">
-                  <CheckCircle className="size-4 text-ok shrink-0 mt-0.5" />
-                  <div>
-                    <strong className="text-fg">Registration expiry：</strong>
-                    <span className="text-muted">推荐填写 <strong>300</strong> 秒（5分钟保活一次，稳定性最佳）。</span>
+                    <span className="text-fg font-medium">DTMF 传信方式：</span>
+                    <span className="text-muted ml-1">
+                      选中 <code className="text-ok font-semibold bg-panel-2 px-1 rounded">inband</code>（带内音频），或保持 <code className="text-fg bg-panel-2 px-1 rounded">rfc-2833</code>。
+                    </span>
+                    <div className="mt-1 text-[11px] text-accent font-medium">
+                      ★ 强烈推荐切换为 inband（按键 IVR 语音菜单兼容性最佳）。
+                    </div>
                   </div>
                 </div>
               </div>
             </div>
 
-            {/* Step 4 */}
+            {/* 4. 网络设置 (Network Settings) */}
             <div className="space-y-2">
               <p className="font-medium text-fg flex items-center gap-2 text-[13px]">
                 <span className="flex size-5 items-center justify-center rounded-full bg-accent/20 text-accent text-xs font-semibold">4</span>
-                <span>启用与注册：</span>
+                <span>进入 Network Settings (网络设置)：</span>
               </p>
-              <div className="ml-7 rounded-xl bg-panel-solid p-3.5 ring-1 ring-line text-xs space-y-1.5">
-                <p className="font-medium text-ok">
-                  返回到账号设置主界面，点击大绿色按钮 <strong>【Register】</strong>。
+              <div className="ml-7 rounded-xl bg-panel-solid p-3.5 ring-1 ring-line text-xs space-y-3">
+                <div className="space-y-1">
+                  <div className="flex items-center justify-between">
+                    <span className="font-medium text-fg">Enable IPv6</span>
+                    <Badge tone="muted">建议关闭（灰色）</Badge>
+                  </div>
+                  <p className="text-[11px] text-muted leading-normal">
+                    <strong>原因：</strong>避免手机优先尝试走公网 IPv6 解析而忽略了局域网的 IPv4。
+                  </p>
+                </div>
+
+                <div className="space-y-1 pt-2 border-t border-line/60">
+                  <div className="flex items-center justify-between">
+                    <span className="font-medium text-fg">Transports (传输协议)</span>
+                    <Badge tone="info">UDP</Badge>
+                  </div>
+                </div>
+
+                <div className="space-y-1 pt-2 border-t border-line/60">
+                  <div className="flex items-center justify-between">
+                    <span className="font-medium text-fg">Enable STUN</span>
+                    <Badge tone="muted">关闭（灰色）</Badge>
+                  </div>
+                  <p className="text-[11px] text-muted leading-normal">
+                    <strong>原因：</strong>当前开启时，手机会连到公网的 stun.zoiper.com 获取外网 IP。但在家庭局域网内，开启 STUN 会导致手机把自己的内网 IP 换成公网 IP 发送，造成注册失败或接听没声音。局域网务必关闭 STUN。
+                  </p>
+                </div>
+
+                <div className="space-y-1 pt-2 border-t border-line/60">
+                  <div className="flex items-center justify-between">
+                    <span className="font-medium text-fg">Enable on start</span>
+                    <Badge tone="ok">保持绿色开启</Badge>
+                  </div>
+                  <p className="text-[11px] text-muted leading-normal">
+                    保证打开 App 时自动连接并注册分机。
+                  </p>
+                </div>
+
+                <div className="space-y-1 pt-2 border-t border-line/60">
+                  <div className="flex items-center justify-between">
+                    <span className="font-medium text-fg">TLS Settings</span>
+                    <Badge tone="muted">关闭（灰色）</Badge>
+                  </div>
+                  <p className="text-[11px] text-muted leading-normal">
+                    <strong>原因：</strong>传输通道选的是 UDP，TLS 引擎无需启动。
+                  </p>
+                </div>
+
+                <div className="rounded-lg bg-panel-2 p-2.5 text-xs text-muted flex items-center justify-between">
+                  <span>设置完成后，点击右上角黑色的 <strong>【Save】</strong> 保存，并点击左上角 <strong>&lt; Accounts</strong> 返回上一页。</span>
+                </div>
+              </div>
+            </div>
+
+            {/* 5. 音频编码 (Audio Codecs) */}
+            <div className="space-y-2">
+              <p className="font-medium text-fg flex items-center gap-2 text-[13px]">
+                <span className="flex size-5 items-center justify-center rounded-full bg-accent/20 text-accent text-xs font-semibold">5</span>
+                <span>进入 Audio Codecs (音频编码器优化)：</span>
+              </p>
+              <div className="ml-7 rounded-xl bg-panel-solid p-3.5 ring-1 ring-line text-xs space-y-2">
+                <div className="flex items-center justify-between flex-wrap gap-2">
+                  <span className="font-semibold text-fg">
+                    仅保留开启：<code className="text-ok font-mono bg-panel-2 px-1.5 py-0.5 rounded">u-law (PCMU)</code> 与 <code className="text-ok font-mono bg-panel-2 px-1.5 py-0.5 rounded">a-law (PCMA)</code>
+                  </span>
+                  <Badge tone="warn">按住右侧三条杠拖到最上方，关闭其他所有编码</Badge>
+                </div>
+                <div className="space-y-1.5 pt-2 border-t border-line/60 text-[11px] text-muted leading-relaxed">
+                  <p>
+                    <strong>• 硬件原生匹配：</strong>移远 EC20 4G 模组与中国移动/联通/电信标准语音固网采用的正是 G.711 u-law (8000Hz) 与 G.711 a-law，SimCallHub 原生支持这两个编码。
+                  </p>
+                  <p>
+                    <strong>• 避免无效协商：</strong>GSM、Speex、iLBC 是上古时期的有损网络压缩编码，网关并不支持。如果开启且排在前面，每次打电话双方都要先协商失败再退回 G.711，容易导致接通慢甚至偶尔无声。只留这两个能实现秒级直通。
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* 6. 视频编解码 (Video codecs) */}
+            <div className="space-y-2">
+              <p className="font-medium text-fg flex items-center gap-2 text-[13px]">
+                <span className="flex size-5 items-center justify-center rounded-full bg-accent/20 text-accent text-xs font-semibold">6</span>
+                <span>进入 Video codecs (关闭视频编码器)：</span>
+              </p>
+              <div className="ml-7 rounded-xl bg-panel-solid p-3.5 ring-1 ring-line text-xs space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="font-medium text-fg">把 VP8 也点击关闭</span>
+                  <Badge tone="muted">切换为灰色关闭状态</Badge>
+                </div>
+                <p className="text-[11px] text-muted leading-relaxed pt-1 border-t border-line/60">
+                  <strong>原因：</strong>SimCallHub 是连接移远 4G 模块的蜂窝电话网关，运营商手机网络通话是纯音频（G.711 / PCM），完全没有视频数据流。如果开启了 VP8，Zoiper 每次拨打或接听电话时，都会在 SIP 信令（SDP 报文）中声明“我支持视频通话（m=video）”。这不仅增加了网络开销，甚至可能导致某些纯语音 SIP 引擎在解析媒体描述时出现兼容性问题。彻底关闭视频编码器后，Zoiper 会以纯语音客户端模式运行，不会唤醒 iOS 系统的摄像头管线或硬件视频编解码模块，呼叫建立更快、更省电。
                 </p>
-                <div className="flex items-center gap-2 text-fg">
-                  <CheckCircle2 className="size-4 text-ok" />
+              </div>
+            </div>
+
+            {/* 7. 即时消息 (Instant Messaging) */}
+            <div className="space-y-2">
+              <p className="font-medium text-fg flex items-center gap-2 text-[13px]">
+                <span className="flex size-5 items-center justify-center rounded-full bg-accent/20 text-accent text-xs font-semibold">7</span>
+                <span>进入 Instant Messaging (即时消息设置)：</span>
+              </p>
+              <div className="ml-7 rounded-xl bg-panel-solid p-3.5 ring-1 ring-line text-xs space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="font-medium text-fg">IM Enabled (即时消息)</span>
+                  <Badge tone="muted">全部关闭（关掉 IM Enabled）</Badge>
+                </div>
+                <p className="text-[11px] text-muted leading-relaxed pt-1 border-t border-line/60">
+                  <strong>原因：</strong>IM 是用于类似企业聊天软件（如 Skype for Business）在 SIP 里收发文本聊天消息的；Presence 是探测对方是否“在线/离开/忙碌”。SimCallHub 是电话网关，你的短信收发在 Web 后台已有独立的分类系统，不需要通过 Zoiper 传文本。
+                </p>
+              </div>
+            </div>
+
+            {/* 8. 注册与连接验证 */}
+            <div className="space-y-2">
+              <p className="font-medium text-fg flex items-center gap-2 text-[13px]">
+                <span className="flex size-5 items-center justify-center rounded-full bg-ok/20 text-ok text-xs font-semibold">8</span>
+                <span>回到设置主界面进行注册：</span>
+              </p>
+              <div className="ml-7 rounded-xl bg-panel-solid p-3.5 ring-1 ring-line text-xs space-y-2">
+                <p className="font-medium text-fg">
+                  最后回到账号设置主界面，点击大绿色按钮 <strong>【Register】</strong>。
+                </p>
+                <div className="flex items-center gap-2 text-ok font-medium">
+                  <CheckCircle2 className="size-4" />
                   <span>注册成功后，顶部会显示绿色的 <strong>Registration status: OK</strong>！</span>
                 </div>
                 <p className="text-muted text-[11px]">
-                  此时您已可在页面顶部的“分机实时在线状态”中看到您的手机设备已在线，任何打入 SIM 卡的电话均可免提接听或录音。
+                  此时您已可在本页面顶部的“分机实时在线状态”中看到您的手机设备已在线，任何打入对应 SIM 卡的电话均可免提接听，拨号呼出也会走绑定的 4G 卡。
                 </p>
               </div>
             </div>
