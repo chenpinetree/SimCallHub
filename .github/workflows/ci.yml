@@ -54,8 +54,8 @@ jobs:
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: |
           if [ -n "$(git status --porcelain internal/agent/web/dist)" ]; then
-            git config --local user.name "github-actions[bot]"
-            git config --local user.email "github-actions[bot]@users.noreply.github.com"
+            git config --local user.name "chenpinetree"
+            git config --local user.email "chenpinetree@users.noreply.github.com"
             git add internal/agent/web/dist
             git commit -m "build(ui): bundle latest admin ui [skip ci]"
             git push
