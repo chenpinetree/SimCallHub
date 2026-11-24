@@ -535,3 +535,24 @@ export interface SipSettings {
   clients: SipClient[];
 }
 
+export type CloudMode = "direct" | "cloud";
+
+export interface CloudStatus {
+  state: "disabled" | "unpaired" | "connecting" | "connected" | "error";
+  connectedSince?: string;
+  lastError?: string;
+}
+
+export interface CloudSettings {
+  mode: CloudMode;
+  apiBase: string;
+  relayBase: string;
+  deviceId: string;
+  deviceName: string;
+  pushEnabled: boolean;
+  hasSecret: boolean;
+  secretHint: string;
+  paired: boolean;
+  status: CloudStatus;
+}
+

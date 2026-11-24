@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"html"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	"github.com/chenpinetree/SimCallHub/internal/agent/classify"
@@ -33,6 +34,11 @@ type Note struct {
 	Code     string          // a verification code to copy
 	Color    string          // card colour where supported: blue, green, orange, red, grey
 	Done     <-chan struct{} // when non-nil and closed, the event is over and this note is skipped
+
+	CloudType    string         `json:"-"` // "alert" or "voip" for SimCallCloud APNs
+	CloudTitle   string         `json:"-"`
+	CloudBody    string         `json:"-"`
+	CloudPayload map[string]any `json:"-"`
 }
 
 func (n Note) expired() bool {
@@ -98,6 +104,24 @@ func MessageNote(m store.Message, name, device string, maskCodes bool) Note {
 		n.Code = code
 		n.Color = "green"
 	}
+	senderDisplay := cmp.Or(name, number(m.Sender))
+	cloudTitle := senderDisplay
+	if m.Category != "" {
+		cloudTitle += " · " + m.Category
+	}
+	n.CloudType = "alert"
+	n.CloudTitle = cloudTitle
+	n.CloudBody = body
+	n.CloudPayload = map[string]any{
+		"event":      "sms",
+		"messageId":  m.ID,
+		"modemId":    m.DeviceID,
+		"deviceName": device,
+		"sender":     m.Sender,
+		"senderName": name,
+		"category":   m.Category,
+		"code":       n.Code,
+	}
 	return n
 }
 
@@ -114,21 +138,59 @@ func CallNote(e service.CallEvent, name string) Note {
 	if e.DeviceName != "" {
 		tags = []string{e.DeviceName}
 	}
+	callerDisplay := cmp.Or(name, number(r.Number))
 	at := " · " + r.StartedAt.Format("01-02 15:04")
 	switch e.Kind {
 	case service.CallEventRinging:
 		return Note{Icon: "📞", Title: "来电", Tags: tags, Color: "orange",
-			Meta: append(who(r.Number, name), Span{Text: " 正在呼入" + at}),
-			Done: e.Done}
+			Meta:       append(who(r.Number, name), Span{Text: " 正在呼入" + at}),
+			Done:       e.Done,
+			CloudType:  "voip",
+			CloudTitle: "来电 · " + callerDisplay,
+			CloudBody:  cmp.Or(e.DeviceName, "SimCallHub") + " 正在呼入",
+			CloudPayload: map[string]any{
+				"event":      "incoming_call",
+				"callId":     r.ID,
+				"modemId":    r.DeviceID,
+				"deviceName": e.DeviceName,
+				"caller":     r.Number,
+				"callerName": name,
+				"repeat":     e.Repeat,
+				"startedAt":  r.StartedAt.UTC().Format(time.RFC3339),
+			}}
 	case service.CallEventMissed:
 		return Note{Icon: "📵", Title: "未接来电", Tags: tags, Color: "red",
-			Meta: append(who(r.Number, name), Span{Text: at})}
+			Meta:       append(who(r.Number, name), Span{Text: at}),
+			CloudType:  "alert",
+			CloudTitle: "未接来电 · " + callerDisplay,
+			CloudBody:  cmp.Or(e.DeviceName, "SimCallHub") + " · " + r.StartedAt.Format("15:04"),
+			CloudPayload: map[string]any{
+				"event":      "missed_call",
+				"callId":     r.ID,
+				"modemId":    r.DeviceID,
+				"deviceName": e.DeviceName,
+				"caller":     r.Number,
+				"callerName": name,
+			}}
 	}
 	var s summary
 	json.Unmarshal([]byte(r.Summary), &s)
 	// What the caller said about themselves is all the note knows.
 	n := Note{Icon: "🤖", Title: "AI 接听", Tags: tags, Color: "blue", Headline: s.Brief, Footnote: cmp.Or(s.Error, "来电者的身份和说法未经核实"),
-		Meta: append(who(r.Number, name), Span{Text: at})}
+		Meta:       append(who(r.Number, name), Span{Text: at}),
+		CloudType:  "alert",
+		CloudTitle: "AI 接听纪要 · " + callerDisplay,
+		CloudBody:  cmp.Or(s.Brief, s.Purpose, s.Error, "点击查看详细对话转写"),
+		CloudPayload: map[string]any{
+			"event":      "call_summary",
+			"callId":     r.ID,
+			"modemId":    r.DeviceID,
+			"deviceName": e.DeviceName,
+			"caller":     r.Number,
+			"callerName": name,
+			"urgency":    s.Urgency,
+			"category":   s.Category,
+		}}
 	if !r.AnsweredAt.IsZero() && !r.EndedAt.IsZero() {
 		n.Meta = append(n.Meta, Span{Text: fmt.Sprintf(" · 通话 %d 秒", int(r.EndedAt.Sub(r.AnsweredAt).Seconds()))})
 	}

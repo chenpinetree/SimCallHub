@@ -383,3 +383,95 @@ func TestHTMLFitsTelegram(t *testing.T) {
 		t.Fatalf("entity split: %q", out[max(0, i-10):])
 	}
 }
+
+type fakeCloudPush struct {
+	mu   sync.Mutex
+	sent []CloudPushMessage
+}
+
+func (f *fakeCloudPush) Ready(context.Context) bool { return true }
+
+func (f *fakeCloudPush) Send(_ context.Context, msg CloudPushMessage) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.sent = append(f.sent, msg)
+	return nil
+}
+
+func (f *fakeCloudPush) messages() []CloudPushMessage {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]CloudPushMessage(nil), f.sent...)
+}
+
+func TestCloudPushSMSAndNonRepeatingVoIP(t *testing.T) {
+	st, err := store.Open(filepath.Join(t.TempDir(), "notify.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+
+	cp := &fakeCloudPush{}
+	n := &Notifier{
+		Config:    func(context.Context) (Config, error) { return Config{Rules: DefaultRules()}, nil },
+		Store:     st,
+		Log:       slog.New(slog.NewTextHandler(io.Discard, nil)),
+		CloudPush: cp,
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go n.Run(ctx)
+
+	// Send initial ring + repeated ring: VoIP push should only fire ONCE!
+	n.Call(service.CallEvent{
+		Kind: service.CallEventRinging,
+		Record: store.CallRecord{
+			ID:        10,
+			DeviceID:  "imei-1",
+			Number:    "13800138000",
+			StartedAt: time.Now(),
+		},
+		DeviceName: "主卡",
+		Repeat:     false,
+	})
+	n.Call(service.CallEvent{
+		Kind: service.CallEventRinging,
+		Record: store.CallRecord{
+			ID:        10,
+			DeviceID:  "imei-1",
+			Number:    "13800138000",
+			StartedAt: time.Now(),
+		},
+		DeviceName: "主卡",
+		Repeat:     true,
+	})
+	// Save an SMS and trigger Messages with ZERO bot channels configured.
+	if _, err := st.SaveSegment(ctx, store.Segment{
+		PDUHash: "h1", PDU: "p", Sender: "10086", SentAt: time.Now(), ReceivedAt: time.Now(),
+		Total: 1, Seq: 1, Body: "验证码 123456", DeviceID: "imei-1",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	msgs, err := st.AssemblePending(ctx, time.Now(), time.Hour, nil)
+	if err != nil || len(msgs) != 1 {
+		t.Fatalf("AssemblePending: %v %d", err, len(msgs))
+	}
+	n.Messages(msgs)
+
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		if len(cp.messages()) >= 2 {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	time.Sleep(50 * time.Millisecond)
+
+	got := cp.messages()
+	if len(got) != 2 {
+		t.Fatalf("expected 2 cloud pushes (1 voip + 1 alert), got %d: %+v", len(got), got)
+	}
+	if got[0].Type != "voip" || got[1].Type != "alert" {
+		t.Fatalf("unexpected push types: %+v", got)
+	}
+}

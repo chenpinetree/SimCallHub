@@ -32,6 +32,7 @@ import (
 
 	"github.com/chenpinetree/SimCallHub/internal/agent/assistant"
 	"github.com/chenpinetree/SimCallHub/internal/agent/classify"
+	"github.com/chenpinetree/SimCallHub/internal/agent/cloudrelay"
 	"github.com/chenpinetree/SimCallHub/internal/agent/modem"
 	"github.com/chenpinetree/SimCallHub/internal/agent/notify"
 	"github.com/chenpinetree/SimCallHub/internal/agent/pdu"
@@ -340,6 +341,7 @@ func runServe(args []string) error {
 			cfg, err := conf.LLM(ctx)
 			return err == nil && cfg.Ready() && worker.ModelUp()
 		},
+		CloudPush: &cloudPushAdapter{conf: conf},
 	}
 	aide := &assistant.Agent{Config: conf.Assistant, LLM: conf.LLM, Client: client, Log: log, Answered: st.CountAssistantCalls, VoicemailDir: voicemails}
 	var sipSrv *sip.Server
@@ -418,17 +420,21 @@ func runServe(args []string) error {
 		func(level, text string) { devices.Note(ctx, level, text) })
 	aide.Note = devices.Note
 	notifier.Note = devices.Note
+	relayClient := cloudrelay.NewClient(conf.Cloud, devices.Note, log)
 	srv, err := web.New(web.Deps{
 		Store: st, Devices: devices, Settings: conf, Worker: worker, Client: client, Assistant: aide,
 		RecordingDir: recordings, VoicemailDir: voicemails, Notifier: notifier, Phonebook: book, SIP: sipSrv,
-		Log: log, Version: buildVersion(), SecureCookie: *secureCookie || *useTLS,
+		Cloud: relayClient,
+		Log:   log, Version: buildVersion(), SecureCookie: *secureCookie || *useTLS,
 	})
 	if err != nil {
 		return err
 	}
+	handler := srv.Handler()
+	relayClient.SetHandler(handler)
 	httpServer := &http.Server{
 		Addr:              addr,
-		Handler:           srv.Handler(),
+		Handler:           handler,
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 
@@ -436,6 +442,7 @@ func runServe(args []string) error {
 	go pruneRecordings(ctx, st, conf, recordings, log)
 	go notifier.Run(ctx)
 	go worker.Run(ctx)
+	go relayClient.Run(ctx)
 	errc := make(chan error, 2)
 	scheme, err := serveWeb(httpServer, *useTLS, *tlsCert, *tlsKey, *dataDir, log, errc)
 	if err != nil {
@@ -730,4 +737,34 @@ func pruneRecordings(ctx context.Context, st *store.Store, conf *settings.Settin
 		case <-time.After(time.Hour):
 		}
 	}
+}
+
+type cloudPushAdapter struct {
+	conf *settings.Settings
+}
+
+func (a *cloudPushAdapter) Ready(ctx context.Context) bool {
+	cfg, err := a.conf.Cloud(ctx)
+	return err == nil && cfg.PushReady()
+}
+
+func (a *cloudPushAdapter) Send(ctx context.Context, msg notify.CloudPushMessage) error {
+	cfg, err := a.conf.Cloud(ctx)
+	if err != nil {
+		return err
+	}
+	if !cfg.PushReady() {
+		return nil
+	}
+	payload := make(map[string]any, len(msg.Payload)+1)
+	for k, v := range msg.Payload {
+		payload[k] = v
+	}
+	payload["deviceId"] = cfg.DeviceID
+	return cloudrelay.Push(ctx, cfg, cloudrelay.PushRequest{
+		Type:    msg.Type,
+		Title:   msg.Title,
+		Body:    msg.Body,
+		Payload: payload,
+	})
 }

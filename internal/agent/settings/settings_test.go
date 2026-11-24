@@ -8,6 +8,7 @@ import (
 
 	"github.com/chenpinetree/SimCallHub/internal/agent/assistant"
 	"github.com/chenpinetree/SimCallHub/internal/agent/classify"
+	"github.com/chenpinetree/SimCallHub/internal/agent/cloudrelay"
 	"github.com/chenpinetree/SimCallHub/internal/agent/notify"
 	"github.com/chenpinetree/SimCallHub/internal/agent/secret"
 	"github.com/chenpinetree/SimCallHub/internal/agent/store"
@@ -199,5 +200,43 @@ func TestSIPConfigEncryptedAndLegacy(t *testing.T) {
 	gotLegacy, ok, err := s.SIPConfig(ctx)
 	if err != nil || !ok || gotLegacy != legacy {
 		t.Fatalf("legacy SIPConfig = (%q, %v, %v)", gotLegacy, ok, err)
+	}
+}
+
+func TestCloudConfigSealedAndCleared(t *testing.T) {
+	s, st := open(t)
+	ctx := context.Background()
+
+	def, err := s.Cloud(ctx)
+	if err != nil || def.Mode != cloudrelay.ModeDirect || def.Paired() {
+		t.Fatalf("default Cloud = (%+v, %v)", def, err)
+	}
+
+	sec := "top-secret-device-key"
+	cfg := cloudrelay.Config{
+		Mode:        cloudrelay.ModeCloud,
+		APIBase:     "https://api.sim-callhub.com",
+		RelayBase:   "wss://relay.sim-callhub.com",
+		DeviceID:    "dev_123",
+		DeviceName:  "HomeNAS",
+		PushEnabled: true,
+	}
+	if err := s.SetCloud(ctx, cfg, &sec); err != nil {
+		t.Fatalf("SetCloud: %v", err)
+	}
+	rawSec, _ := st.Setting(ctx, keyCloudSecret)
+	if rawSec == "" || strings.Contains(rawSec, sec) {
+		t.Fatalf("cloud secret not sealed: %q", rawSec)
+	}
+	got, err := s.Cloud(ctx)
+	if err != nil || !got.Ready() || got.DeviceSecret != sec || got.DeviceID != "dev_123" {
+		t.Fatalf("Cloud after SetCloud = (%+v, %v)", got, err)
+	}
+	if err := s.ClearCloudDevice(ctx); err != nil {
+		t.Fatalf("ClearCloudDevice: %v", err)
+	}
+	cleared, err := s.Cloud(ctx)
+	if err != nil || cleared.Mode != cloudrelay.ModeDirect || cleared.Paired() {
+		t.Fatalf("Cloud after ClearCloudDevice = (%+v, %v)", cleared, err)
 	}
 }

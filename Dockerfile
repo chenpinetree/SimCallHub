@@ -2,7 +2,7 @@
 # 集成原生 Web 管理、大模型短信分类、AI代接，以及轻量 SIP VoIP 分机服务
 # 适用于群晖 NAS / 飞牛 NAS / Linux 服务器
 
-FROM --platform=linux/amd64 golang:1.25-bookworm AS build
+FROM golang:1.25-bookworm AS build
 
 ENV GOPROXY=https://goproxy.cn,direct \
     CGO_ENABLED=1
@@ -13,11 +13,11 @@ RUN apt-get update \
 
 WORKDIR /src
 COPY . .
-ARG VERSION=v1.2.5
+ARG VERSION=v1.3.0
 RUN go build -trimpath -ldflags "-s -w -X main.version=${VERSION}" -o /out/simcallhub ./cmd/simcallhub
 
 # ---------- 运行阶段 ----------
-FROM --platform=linux/amd64 debian:bookworm-slim
+FROM debian:bookworm-slim
 
 RUN apt-get update \
  && apt-get install -y --no-install-recommends libusb-1.0-0 ca-certificates tzdata usbutils \

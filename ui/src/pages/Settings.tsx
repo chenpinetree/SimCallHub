@@ -2,8 +2,8 @@ import clsx from "clsx";
 import { useEffect, useState, type ReactNode } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useLocation, useNavigate } from "react-router-dom";
-import { ArrowRight, BellRing, Bot, Brain, CheckCircle2, CreditCard, Cpu, Eye, FlaskConical, KeyRound, Monitor, Moon, Palette, PhoneCall, Plus, RotateCcw, Save, ScrollText, ShieldCheck, SlidersHorizontal, Sparkles, Sun, Trash2, Wand2, type LucideIcon } from "lucide-react";
-import { api, ApiError, type AssistantSettings, type Category, type ClassifierConfig, type ClassifierSettings, type ClassifyLog, type Finding, type SipSettings } from "../lib/api";
+import { ArrowRight, BellRing, Bot, Brain, CheckCircle2, Cloud, CreditCard, Cpu, Eye, FlaskConical, KeyRound, Monitor, Moon, Palette, PhoneCall, Plus, RotateCcw, Save, ScrollText, ShieldCheck, SlidersHorizontal, Sparkles, Sun, Trash2, Wand2, type LucideIcon } from "lucide-react";
+import { api, ApiError, type AssistantSettings, type Category, type ClassifierConfig, type ClassifierSettings, type ClassifyLog, type CloudSettings, type Finding, type SipSettings } from "../lib/api";
 import { knownDevices } from "../lib/devices";
 import { useStatus } from "../lib/hooks";
 import { ago, simLabel } from "../lib/format";
@@ -17,13 +17,15 @@ import { AutoUnlock, PinProtectionNote } from "../components/AutoUnlock";
 import { AssistantSection } from "../components/AssistantSettings";
 import { activeChannels, NotifySection, useNotify } from "../components/NotifySettings";
 import { SipSection } from "../components/SipSettings";
+import { CloudSection } from "../components/CloudSettings";
 
-type Tab = "notify" | "assistant" | "sip" | "classifier" | "devices" | "general";
+type Tab = "notify" | "assistant" | "sip" | "cloud" | "classifier" | "devices" | "general";
 
 const tabs: { id: Tab; label: string; hint: string; icon: LucideIcon }[] = [
   { id: "notify", label: "消息推送", hint: "Telegram、飞书、钉钉、企业微信", icon: BellRing },
   { id: "assistant", label: "AI 接听", hint: "自动接电话、问来意", icon: Bot },
   { id: "sip", label: "SIP 电话", hint: "手机/电脑软电话 VoIP 分机连接与状态", icon: PhoneCall },
+  { id: "cloud", label: "iOS 与云中继", hint: "免费直连 / 付费云中继与 APNs 唤醒", icon: Cloud },
   { id: "classifier", label: "智能分类", hint: "大模型、类别、调用记录", icon: Brain },
   { id: "devices", label: "设备", hint: "按设备分别设置 SIM 卡自动解锁", icon: Cpu },
   { id: "general", label: "通用", hint: "登录密码、界面", icon: SlidersHorizontal },
@@ -44,11 +46,13 @@ export function SettingsPage() {
   const { data: notify } = useNotify();
   const { data: assistant } = useQuery({ queryKey: ["assistant"], queryFn: () => api.get<AssistantSettings>("/api/settings/assistant") });
   const { data: sipSettings } = useQuery<SipSettings>({ queryKey: ["sip-settings"], queryFn: () => api.get<SipSettings>("/api/settings/sip") });
+  const { data: cloudSettings } = useQuery<CloudSettings>({ queryKey: ["cloud-settings"], queryFn: () => api.get<CloudSettings>("/api/settings/cloud") });
   const { data: classifier } = useQuery({ queryKey: ["classifier"], queryFn: () => api.get<ClassifierSettings>("/api/settings/classifier") });
   const state: Partial<Record<Tab, boolean | undefined>> = {
     notify: notify && activeChannels(notify) > 0,
     assistant: assistant?.enabled || assistant?.voicemail?.enabled,
     sip: sipSettings?.clients && sipSettings.clients.length > 0,
+    cloud: cloudSettings?.mode === "cloud",
     classifier: classifier?.enabled,
   };
   const open = (id: Tab) => {
@@ -89,6 +93,7 @@ export function SettingsPage() {
           {tab === "notify" && <NotifySection />}
           {tab === "assistant" && <AssistantSection />}
           {tab === "sip" && <SipSection />}
+          {tab === "cloud" && <CloudSection />}
           {tab === "classifier" && <ClassifierSection />}
           {tab === "devices" && <DevicesSection />}
           {tab === "general" && (

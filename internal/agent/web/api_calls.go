@@ -16,6 +16,7 @@ import (
 
 	"github.com/coder/websocket"
 
+	"github.com/chenpinetree/SimCallHub/internal/agent/cloudrelay"
 	"github.com/chenpinetree/SimCallHub/internal/agent/modem"
 	"github.com/chenpinetree/SimCallHub/internal/agent/service"
 	"github.com/chenpinetree/SimCallHub/internal/agent/store"
@@ -279,8 +280,13 @@ func (s *Server) callAudio(w http.ResponseWriter, r *http.Request) {
 	if !found {
 		return
 	}
-	// Accept checks that the page and the socket share an origin.
-	conn, err := websocket.Accept(w, r, nil)
+	// Browser cookies keep same-origin enforcement; native iOS Bearer clients
+	// and authenticated cloud relay streams are allowed across origins.
+	var acceptOpts *websocket.AcceptOptions
+	if _, viaCloud := cloudrelay.FromRequest(r); viaCloud || bearerToken(r) != "" {
+		acceptOpts = &websocket.AcceptOptions{InsecureSkipVerify: true}
+	}
+	conn, err := websocket.Accept(w, r, acceptOpts)
 	if err != nil {
 		return
 	}

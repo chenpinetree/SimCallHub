@@ -71,6 +71,7 @@ const (
 	KindFeishu   Kind = "feishu"
 	KindDingTalk Kind = "dingtalk"
 	KindWeCom    Kind = "wecom"
+	KindIOSPush  Kind = "iospush"
 )
 
 // Kinds lists every channel, in the order the UI shows them.
@@ -87,6 +88,8 @@ func (k Kind) Label() string {
 		return "钉钉"
 	case KindWeCom:
 		return "企业微信"
+	case KindIOSPush:
+		return "iOS 推送"
 	}
 	return string(k)
 }

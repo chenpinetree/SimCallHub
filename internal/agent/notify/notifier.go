@@ -20,6 +20,21 @@ const (
 	queueSize    = 200
 )
 
+// CloudPushMessage is forwarded to SimCallCloud APNs/VoIP push endpoint when
+// cloud relay mode is enabled.
+type CloudPushMessage struct {
+	Type    string
+	Title   string
+	Body    string
+	Payload map[string]any
+}
+
+// CloudPushSender delivers iOS alert and VoIP notifications via SimCallCloud.
+type CloudPushSender interface {
+	Ready(ctx context.Context) bool
+	Send(ctx context.Context, msg CloudPushMessage) error
+}
+
 // Notifier turns new messages and call events into notes and sends them to
 // every enabled channel. Each channel has its own queue, so one that is
 // down does not hold up the others, and retries through network trouble.
@@ -35,8 +50,9 @@ type Notifier struct {
 	// Name gives the phone book's name for a number, or "".
 	Name func(number string) string
 
-	Telegram Telegram
-	Bots     Bots
+	Telegram  Telegram
+	Bots      Bots
+	CloudPush CloudPushSender
 
 	once   sync.Once
 	queues map[Kind]chan Note
@@ -51,6 +67,7 @@ func (n *Notifier) init() {
 		for _, k := range Kinds {
 			n.queues[k] = make(chan Note, queueSize)
 		}
+		n.queues[KindIOSPush] = make(chan Note, queueSize)
 		n.failing = map[Kind]bool{}
 	})
 }
@@ -76,6 +93,10 @@ func (n *Notifier) Run(ctx context.Context) {
 	wg.Wait()
 }
 
+func (n *Notifier) cloudReady(ctx context.Context) bool {
+	return n.CloudPush != nil && n.CloudPush.Ready(ctx)
+}
+
 // enqueue queues a note for every channel that is ready.
 func (n *Notifier) enqueue(cfg Config, note Note) {
 	n.init()
@@ -89,11 +110,34 @@ func (n *Notifier) enqueue(cfg Config, note Note) {
 			n.Log.Warn("push queue full, message dropped", "channel", k)
 		}
 	}
+	if note.CloudType != "" && n.cloudReady(context.Background()) {
+		if note.CloudType == "voip" {
+			if repeat, _ := note.CloudPayload["repeat"].(bool); repeat {
+				return
+			}
+		}
+		select {
+		case n.queues[KindIOSPush] <- note:
+		default:
+			n.Log.Warn("push queue full, message dropped", "channel", KindIOSPush)
+		}
+	}
 }
 
 // Send delivers a note to one channel now, without retrying; the settings
 // page's test button uses it.
 func (n *Notifier) Send(ctx context.Context, kind Kind, cfg Config, note Note) error {
+	if kind == KindIOSPush {
+		if n.CloudPush == nil {
+			return errors.New("iOS 云推送未配置")
+		}
+		return n.CloudPush.Send(ctx, CloudPushMessage{
+			Type:    note.CloudType,
+			Title:   note.CloudTitle,
+			Body:    note.CloudBody,
+			Payload: note.CloudPayload,
+		})
+	}
 	if kind == KindTelegram {
 		return n.Telegram.Send(ctx, cfg.Telegram, note.HTML())
 	}
@@ -126,6 +170,10 @@ func retryable(err error, attempt int) (time.Duration, bool) {
 			wait = time.Minute // the group bots count per minute
 		}
 	}
+	var perm interface{ Permanent() bool }
+	if errors.As(err, &perm) && perm.Permanent() {
+		return 0, false
+	}
 	return wait, true
 }
 
@@ -137,7 +185,14 @@ func (n *Notifier) deliver(ctx context.Context, kind Kind, note Note) {
 			return
 		}
 		cfg, cerr := n.Config(ctx)
-		if cerr != nil || !cfg.Ready(kind) {
+		if cerr != nil {
+			return
+		}
+		if kind == KindIOSPush {
+			if !n.cloudReady(ctx) {
+				return
+			}
+		} else if !cfg.Ready(kind) {
 			return // turned off meanwhile
 		}
 		if err = n.Send(ctx, kind, cfg, note); err == nil {
@@ -193,7 +248,7 @@ func (n *Notifier) note(ctx context.Context, level, text string) {
 func (n *Notifier) Messages(msgs []store.Message) {
 	ctx := context.Background()
 	cfg, err := n.Config(ctx)
-	if err != nil || !cfg.Any() || !cfg.Rules.SMS {
+	if err != nil || (!cfg.Any() && !n.cloudReady(ctx)) || !cfg.Rules.SMS {
 		return
 	}
 	for _, m := range msgs {

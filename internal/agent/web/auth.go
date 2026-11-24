@@ -1,6 +1,7 @@
 package web
 
 import (
+	"cmp"
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
@@ -45,11 +46,12 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.limiter.reset(ip)
-	if err := s.startSession(w, r); err != nil {
+	token, err := s.startSession(w, r)
+	if err != nil {
 		s.serverError(w, err)
 		return
 	}
-	ok(w)
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "token": token})
 }
 
 // checkPassword compares against the stored hash; a storage error counts as
@@ -63,16 +65,16 @@ func (s *Server) checkPassword(r *http.Request, password string) bool {
 	return hash != "" && bcrypt.CompareHashAndPassword([]byte(hash), []byte(password)) == nil
 }
 
-func (s *Server) startSession(w http.ResponseWriter, r *http.Request) error {
+func (s *Server) startSession(w http.ResponseWriter, r *http.Request) (string, error) {
 	token, err := newToken()
 	if err != nil {
-		return err
+		return "", err
 	}
 	if err := s.Store.CreateSession(r.Context(), hashToken(token), Username, time.Now().Add(sessionTTL)); err != nil {
-		return err
+		return "", err
 	}
 	s.setSessionCookie(w, token)
-	return nil
+	return token, nil
 }
 
 func (s *Server) setSessionCookie(w http.ResponseWriter, token string) {
@@ -88,7 +90,7 @@ func (s *Server) setSessionCookie(w http.ResponseWriter, token string) {
 }
 
 func (s *Server) logout(w http.ResponseWriter, r *http.Request) {
-	if token := sessionToken(r); token != "" {
+	if token := cmp.Or(bearerToken(r), sessionToken(r)); token != "" {
 		if err := s.Store.DeleteSession(r.Context(), hashToken(token)); err != nil {
 			s.serverError(w, err)
 			return
@@ -127,7 +129,7 @@ func (s *Server) putPassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.Devices.Note(r.Context(), "info", "后台登录密码已修改，其他登录会话已退出")
-	if err := s.startSession(w, r); err != nil {
+	if _, err := s.startSession(w, r); err != nil {
 		s.serverError(w, err)
 		return
 	}

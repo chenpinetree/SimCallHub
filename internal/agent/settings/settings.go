@@ -12,6 +12,7 @@ import (
 
 	"github.com/chenpinetree/SimCallHub/internal/agent/assistant"
 	"github.com/chenpinetree/SimCallHub/internal/agent/classify"
+	"github.com/chenpinetree/SimCallHub/internal/agent/cloudrelay"
 	"github.com/chenpinetree/SimCallHub/internal/agent/notify"
 	"github.com/chenpinetree/SimCallHub/internal/agent/secret"
 	"github.com/chenpinetree/SimCallHub/internal/agent/store"
@@ -33,6 +34,8 @@ const (
 	// until saved.
 	keyNotifyRules     = "notify.rules"
 	keyNotifyRingingV1 = "notify.ringing_v1"
+	keyCloud           = "cloud"
+	keyCloudSecret     = "cloud.device_secret"
 )
 
 // webhookKeys are where a group-bot channel's settings, URL and secret live.
@@ -55,9 +58,10 @@ type Settings struct {
 	store *store.Store
 	box   *secret.Box
 
-	mu   sync.Mutex
-	llm  *classify.Config // cache; the worker reads it for every batch
-	push *notify.Config   // cache; read for every notification
+	mu    sync.Mutex
+	llm   *classify.Config  // cache; the worker reads it for every batch
+	push  *notify.Config    // cache; read for every notification
+	cloud *cloudrelay.Config
 }
 
 func New(st *store.Store, box *secret.Box) *Settings {
@@ -420,4 +424,59 @@ func (s *Settings) SIPConfig(ctx context.Context) (string, bool, error) {
 // SetSIPConfig encrypts and persists the SIP configuration JSON.
 func (s *Settings) SetSIPConfig(ctx context.Context, rawJSON string) error {
 	return s.setSecret(ctx, keySIPConfig, rawJSON)
+}
+
+// Cloud returns the dual-mode access configuration (direct vs cloud relay)
+// with the sealed deviceSecret decrypted.
+func (s *Settings) Cloud(ctx context.Context) (cloudrelay.Config, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.cloud != nil {
+		return *s.cloud, nil
+	}
+	cfg := cloudrelay.DefaultConfig()
+	if _, err := s.getJSON(ctx, keyCloud, &cfg); err != nil {
+		return cfg, err
+	}
+	sec, err := s.secret(ctx, keyCloudSecret)
+	if err != nil {
+		return cfg, fmt.Errorf("读取云端设备密钥：%w", err)
+	}
+	cfg.DeviceSecret = sec
+	cfg.Normalize()
+	s.cloud = &cfg
+	return cfg, nil
+}
+
+// SetCloud saves the cloud relay configuration. deviceSecret replaces the stored
+// secret unless nil; "" clears it.
+func (s *Settings) SetCloud(ctx context.Context, cfg cloudrelay.Config, deviceSecret *string) error {
+	cfg.Normalize()
+	if err := cfg.Validate(); err != nil {
+		return err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if deviceSecret != nil {
+		if err := s.setSecret(ctx, keyCloudSecret, *deviceSecret); err != nil {
+			return err
+		}
+	}
+	if err := s.setJSON(ctx, keyCloud, cfg); err != nil {
+		return err
+	}
+	s.cloud = nil
+	return nil
+}
+
+// ClearCloudDevice removes local cloud device credentials and reverts mode to direct.
+func (s *Settings) ClearCloudDevice(ctx context.Context) error {
+	cfg, err := s.Cloud(ctx)
+	if err != nil {
+		cfg = cloudrelay.DefaultConfig()
+	}
+	cfg.Mode = cloudrelay.ModeDirect
+	cfg.DeviceID = ""
+	empty := ""
+	return s.SetCloud(ctx, cfg, &empty)
 }

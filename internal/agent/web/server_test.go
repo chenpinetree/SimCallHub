@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/chenpinetree/SimCallHub/internal/agent/classify"
+	"github.com/chenpinetree/SimCallHub/internal/agent/cloudrelay"
 	"github.com/chenpinetree/SimCallHub/internal/agent/notify"
 	"github.com/chenpinetree/SimCallHub/internal/agent/secret"
 	"github.com/chenpinetree/SimCallHub/internal/agent/service"
@@ -715,5 +716,117 @@ func TestYellowPagesEdits(t *testing.T) {
 	e.call(t, "POST", "/api/yellowpages/import", raw, &res)
 	if res.Added != 0 || res.Updated != 3 {
 		t.Fatalf("again: %+v", res)
+	}
+}
+
+func TestBearerAuthAndCloudSettingsAPI(t *testing.T) {
+	e := newTestEnv(t)
+
+	// Login without browser Sec-Fetch-Site returns session token for native clients.
+	bodyReader := strings.NewReader(`{"password":"correct-horse"}`)
+	req, _ := http.NewRequest("POST", e.ts.URL+"/api/login", bodyReader)
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var loginOut struct {
+		OK    bool   `json:"ok"`
+		Token string `json:"token"`
+	}
+	_ = json.NewDecoder(resp.Body).Decode(&loginOut)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK || !loginOut.OK || loginOut.Token == "" {
+		t.Fatalf("bearer login failed: status=%d out=%+v", resp.StatusCode, loginOut)
+	}
+
+	// Native client calling authenticated GET with Authorization: Bearer <token>.
+	req, _ = http.NewRequest("GET", e.ts.URL+"/api/settings/cloud", nil)
+	req.Header.Set("Authorization", "Bearer "+loginOut.Token)
+	resp, err = http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var cloudOut struct {
+		Mode   string `json:"mode"`
+		Paired bool   `json:"paired"`
+	}
+	_ = json.NewDecoder(resp.Body).Decode(&cloudOut)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK || cloudOut.Mode != cloudrelay.ModeDirect || cloudOut.Paired {
+		t.Fatalf("GET /api/settings/cloud failed: status=%d out=%+v", resp.StatusCode, cloudOut)
+	}
+
+	// Mock SimCallCloud server for pairing & push test.
+	cloudSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/v1/agent/register":
+			_ = json.NewEncoder(w).Encode(map[string]string{
+				"deviceId":     "dev-cloud-1",
+				"deviceSecret": "sec-cloud-1",
+			})
+		case "/agent/push":
+			if r.Header.Get("X-Device-ID") != "dev-cloud-1" || r.Header.Get("X-Device-Secret") != "sec-cloud-1" {
+				w.WriteHeader(http.StatusUnauthorized)
+				return
+			}
+			_, _ = io.WriteString(w, `{"ok":true}`)
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer cloudSrv.Close()
+
+	// Cross-origin native POST with Bearer token must be allowed (no CSRF failure).
+	pairReqBody, _ := json.Marshal(map[string]string{
+		"code":      "654321",
+		"name":      "Synology",
+		"apiBase":   cloudSrv.URL,
+		"relayBase": "ws" + strings.TrimPrefix(cloudSrv.URL, "http"),
+	})
+	req, _ = http.NewRequest("POST", e.ts.URL+"/api/settings/cloud/pair", strings.NewReader(string(pairReqBody)))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+loginOut.Token)
+	req.Header.Set("Origin", "https://external.example.com")
+	resp, err = http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var pairedOut struct {
+		Mode       string `json:"mode"`
+		Paired     bool   `json:"paired"`
+		HasSecret  bool   `json:"hasSecret"`
+		DeviceID   string `json:"deviceId"`
+		DeviceName string `json:"deviceName"`
+	}
+	_ = json.NewDecoder(resp.Body).Decode(&pairedOut)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK || pairedOut.Mode != cloudrelay.ModeCloud || !pairedOut.Paired || !pairedOut.HasSecret || pairedOut.DeviceID != "dev-cloud-1" {
+		t.Fatalf("pair failed: status=%d out=%+v", resp.StatusCode, pairedOut)
+	}
+
+	// Test push endpoint.
+	req, _ = http.NewRequest("POST", e.ts.URL+"/api/settings/cloud/test-push", nil)
+	req.Header.Set("Authorization", "Bearer "+loginOut.Token)
+	resp, err = http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("test-push status %d", resp.StatusCode)
+	}
+
+	// Unbind reverts to direct mode cleanly.
+	req, _ = http.NewRequest("POST", e.ts.URL+"/api/settings/cloud/unbind", nil)
+	req.Header.Set("Authorization", "Bearer "+loginOut.Token)
+	resp, err = http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = json.NewDecoder(resp.Body).Decode(&cloudOut)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK || cloudOut.Mode != cloudrelay.ModeDirect || cloudOut.Paired {
+		t.Fatalf("unbind failed: status=%d out=%+v", resp.StatusCode, cloudOut)
 	}
 }

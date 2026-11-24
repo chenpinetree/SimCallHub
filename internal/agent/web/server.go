@@ -18,6 +18,7 @@ import (
 
 	"github.com/chenpinetree/SimCallHub/internal/agent/assistant"
 	"github.com/chenpinetree/SimCallHub/internal/agent/classify"
+	"github.com/chenpinetree/SimCallHub/internal/agent/cloudrelay"
 	"github.com/chenpinetree/SimCallHub/internal/agent/notify"
 	"github.com/chenpinetree/SimCallHub/internal/agent/phonebook"
 	"github.com/chenpinetree/SimCallHub/internal/agent/service"
@@ -61,7 +62,9 @@ type Deps struct {
 	VoicemailDir string
 	// SIP is the embedded SIP VoIP extension PBX server.
 	SIP *sip.Server
-	Log *slog.Logger
+	// Cloud manages the optional SimCallCloud yamux reverse tunnel.
+	Cloud *cloudrelay.Client
+	Log   *slog.Logger
 	// Version is the SimCallHub build version string.
 	Version string
 	// SecureCookie marks the session cookie Secure (HTTPS reverse proxy).
@@ -166,6 +169,11 @@ func (s *Server) Handler() http.Handler {
 	authed("POST /api/settings/classifier/reclassify", s.reclassifyAll)
 	authed("GET /api/settings/sip", s.getSIP)
 	authed("PUT /api/settings/sip", s.putSIP)
+	authed("GET /api/settings/cloud", s.getCloud)
+	authed("PUT /api/settings/cloud", s.putCloud)
+	authed("POST /api/settings/cloud/pair", s.pairCloud)
+	authed("POST /api/settings/cloud/unbind", s.unbindCloud)
+	authed("POST /api/settings/cloud/test-push", s.testCloudPush)
 
 	s.routeCalls(authed)
 	s.routeAssistant(authed)
@@ -224,16 +232,20 @@ func (s *Server) serveApp(w http.ResponseWriter, r *http.Request) {
 // CORS preflight, which this server never approves.
 func (s *Server) sameOrigin(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if site := r.Header.Get("Sec-Fetch-Site"); site != "" {
-			if site != "same-origin" && site != "none" {
-				writeError(w, http.StatusForbidden, "cross-site request rejected")
-				return
-			}
-		} else if origin := r.Header.Get("Origin"); origin != "" {
-			parsed, err := url.Parse(origin)
-			if err != nil || parsed.Host != r.Host {
-				writeError(w, http.StatusForbidden, "cross-site request rejected")
-				return
+		_, viaCloud := cloudrelay.FromRequest(r)
+		allowMobile := viaCloud || (r.URL.Path != "/api/login" && bearerToken(r) != "")
+		if !allowMobile {
+			if site := r.Header.Get("Sec-Fetch-Site"); site != "" {
+				if site != "same-origin" && site != "none" {
+					writeError(w, http.StatusForbidden, "cross-site request rejected")
+					return
+				}
+			} else if origin := r.Header.Get("Origin"); origin != "" {
+				parsed, err := url.Parse(origin)
+				if err != nil || parsed.Host != r.Host {
+					writeError(w, http.StatusForbidden, "cross-site request rejected")
+					return
+				}
 			}
 		}
 		if r.ContentLength != 0 && !strings.HasPrefix(r.Header.Get("Content-Type"), "application/json") {
@@ -259,14 +271,28 @@ func (s *Server) requireAuth(next http.HandlerFunc) http.HandlerFunc {
 	}
 }
 
-// authenticated checks the session cookie and, for an active session,
-// extends it and refreshes the cookie.
+// authenticated checks the cloud relay context, bearer token, or session cookie
+// and, for an active session, extends it.
 func (s *Server) authenticated(w http.ResponseWriter, r *http.Request) (bool, error) {
+	if _, viaCloud := cloudrelay.FromRequest(r); viaCloud {
+		return true, nil
+	}
+	now := time.Now()
+	if token := bearerToken(r); token != "" {
+		_, err := s.Store.SessionUser(r.Context(), hashToken(token), now)
+		if errors.Is(err, store.ErrNotFound) {
+			return false, nil
+		}
+		if err != nil {
+			return false, err
+		}
+		_, err = s.Store.ExtendSession(r.Context(), hashToken(token), now, sessionTTL, sessionRenewEvery)
+		return true, err
+	}
 	token := sessionToken(r)
 	if token == "" {
 		return false, nil
 	}
-	now := time.Now()
 	_, err := s.Store.SessionUser(r.Context(), hashToken(token), now)
 	if errors.Is(err, store.ErrNotFound) {
 		return false, nil
@@ -282,6 +308,22 @@ func (s *Server) authenticated(w http.ResponseWriter, r *http.Request) (bool, er
 		s.setSessionCookie(w, token)
 	}
 	return true, nil
+}
+
+// bearerToken extracts an API Bearer token from Authorization header (or ?token= for GET/WebSocket).
+func bearerToken(r *http.Request) string {
+	auth := strings.TrimSpace(r.Header.Get("Authorization"))
+	if len(auth) > 7 && strings.EqualFold(auth[:7], "Bearer ") {
+		if tok := strings.TrimSpace(auth[7:]); tok != "" {
+			return tok
+		}
+	}
+	if r.Method == http.MethodGet {
+		if tok := strings.TrimSpace(r.URL.Query().Get("token")); tok != "" {
+			return tok
+		}
+	}
+	return ""
 }
 
 // sessionToken returns the session cookie's value.
