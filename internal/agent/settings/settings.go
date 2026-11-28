@@ -59,8 +59,8 @@ type Settings struct {
 	box   *secret.Box
 
 	mu    sync.Mutex
-	llm   *classify.Config  // cache; the worker reads it for every batch
-	push  *notify.Config    // cache; read for every notification
+	llm   *classify.Config // cache; the worker reads it for every batch
+	push  *notify.Config   // cache; read for every notification
 	cloud *cloudrelay.Config
 }
 

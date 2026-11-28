@@ -558,20 +558,15 @@ func splitStorages(value string) []string {
 	return out
 }
 
-// ensurePassword creates the web account with a random password on first start.
+// ensurePassword creates the default admin/admin web account on first start.
 func ensurePassword(ctx context.Context, st *store.Store) error {
-	exists, err := st.HasUsers(ctx)
-	if err != nil || exists {
-		return err
-	}
-	password, err := web.RandomPassword()
+	created, err := web.EnsureDefaultAdmin(ctx, st)
 	if err != nil {
 		return err
 	}
-	if err := web.SetPassword(ctx, st, password); err != nil {
-		return err
+	if created {
+		fmt.Fprintf(os.Stderr, "\n首次启动，已初始化默认管理员账号：%s / %s\n登录后可在「设置 -> 账号管理」中修改用户名和密码，或执行 \"simcallhub passwd\" 重置。\n\n", web.Username, web.DefaultAdminPassword)
 	}
-	fmt.Fprintf(os.Stderr, "\n首次启动，已生成 Web 登录密码：%s\n可用 \"simcallhub passwd\" 修改。此密码只显示这一次。\n\n", password)
 	return nil
 }
 

@@ -556,3 +556,53 @@ export interface CloudSettings {
   status: CloudStatus;
 }
 
+export interface UserPermissions {
+  messages: boolean;
+  calls: boolean;
+  contacts: boolean;
+  device: boolean;
+  logs: boolean;
+  settingsNotify: boolean;
+  settingsAssistant: boolean;
+  settingsSip: boolean;
+  settingsCloud: boolean;
+  settingsClassifier: boolean;
+  settingsDevices: boolean;
+  settingsGeneral: boolean;
+}
+
+export type PermissionKey = keyof UserPermissions | "admin";
+export type DeviceScope = "all" | "selected";
+
+export interface SessionInfo {
+  authenticated: boolean;
+  username?: string;
+  role?: "admin" | "user";
+  permissions?: UserPermissions;
+  deviceScope?: DeviceScope;
+  allowedDevices?: string[];
+  defaultPasswordWarning?: boolean;
+}
+
+export interface UserAccount {
+  username: string;
+  role: "admin" | "user";
+  disabled: boolean;
+  permissions: UserPermissions;
+  deviceScope: DeviceScope;
+  allowedDevices: string[];
+  note: string;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface UsersResponse {
+  items: UserAccount[];
+  defaultPasswordWarning: boolean;
+}
+
+export interface CategoriesResponse {
+  categories: Category[];
+  defaultCategories: Category[];
+}
+

@@ -2,8 +2,9 @@ import clsx from "clsx";
 import { useEffect, useState, type ReactNode } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useLocation, useNavigate } from "react-router-dom";
-import { ArrowRight, BellRing, Bot, Brain, CheckCircle2, Cloud, CreditCard, Cpu, Eye, FlaskConical, KeyRound, Monitor, Moon, Palette, PhoneCall, Plus, RotateCcw, Save, ScrollText, ShieldCheck, SlidersHorizontal, Sparkles, Sun, Trash2, Wand2, type LucideIcon } from "lucide-react";
-import { api, ApiError, type AssistantSettings, type Category, type ClassifierConfig, type ClassifierSettings, type ClassifyLog, type CloudSettings, type Finding, type SipSettings } from "../lib/api";
+import { ArrowRight, BellRing, Bot, Brain, CheckCircle2, Cloud, CreditCard, Cpu, Eye, FlaskConical, Monitor, Moon, Palette, PhoneCall, Plus, RotateCcw, Save, ScrollText, ShieldCheck, SlidersHorizontal, Sparkles, Sun, Trash2, Users, Wand2, type LucideIcon } from "lucide-react";
+import { api, ApiError, type AssistantSettings, type Category, type ClassifierConfig, type ClassifierSettings, type ClassifyLog, type CloudSettings, type Finding, type PermissionKey, type SipSettings } from "../lib/api";
+import { hasPerm, useSession } from "../lib/auth";
 import { knownDevices } from "../lib/devices";
 import { useStatus } from "../lib/hooks";
 import { ago, simLabel } from "../lib/format";
@@ -18,36 +19,49 @@ import { AssistantSection } from "../components/AssistantSettings";
 import { activeChannels, NotifySection, useNotify } from "../components/NotifySettings";
 import { SipSection } from "../components/SipSettings";
 import { CloudSection } from "../components/CloudSettings";
+import { UserSettingsSection } from "../components/UserSettings";
 
-type Tab = "notify" | "assistant" | "sip" | "cloud" | "classifier" | "devices" | "general";
+type Tab = "users" | "notify" | "assistant" | "sip" | "cloud" | "classifier" | "devices" | "general";
 
-const tabs: { id: Tab; label: string; hint: string; icon: LucideIcon }[] = [
-  { id: "notify", label: "消息推送", hint: "Telegram、飞书、钉钉、企业微信", icon: BellRing },
-  { id: "assistant", label: "AI 接听", hint: "自动接电话、问来意", icon: Bot },
-  { id: "sip", label: "SIP 电话", hint: "手机/电脑软电话 VoIP 分机连接与状态", icon: PhoneCall },
-  { id: "cloud", label: "iOS 与云中继", hint: "免费直连 / 付费云中继与 APNs 唤醒", icon: Cloud },
-  { id: "classifier", label: "智能分类", hint: "大模型、类别、调用记录", icon: Brain },
-  { id: "devices", label: "设备", hint: "按设备分别设置 SIM 卡自动解锁", icon: Cpu },
-  { id: "general", label: "通用", hint: "登录密码、界面", icon: SlidersHorizontal },
+const allTabs: { id: Tab; label: string; hint: string; icon: LucideIcon; perm: PermissionKey }[] = [
+  { id: "users", label: "账号管理", hint: "管理员账号、子账号与功能/设备权限", icon: Users, perm: "admin" },
+  { id: "notify", label: "消息推送", hint: "Telegram、飞书、钉钉、企业微信", icon: BellRing, perm: "settingsNotify" },
+  { id: "assistant", label: "AI 接听", hint: "自动接电话、问来意", icon: Bot, perm: "settingsAssistant" },
+  { id: "sip", label: "SIP 电话", hint: "手机/电脑软电话 VoIP 分机连接与状态", icon: PhoneCall, perm: "settingsSip" },
+  { id: "cloud", label: "iOS 与云中继", hint: "免费直连 / 付费云中继与 APNs 唤醒", icon: Cloud, perm: "settingsCloud" },
+  { id: "classifier", label: "智能分类", hint: "大模型、类别、调用记录", icon: Brain, perm: "settingsClassifier" },
+  { id: "devices", label: "设备", hint: "按设备分别设置 SIM 卡自动解锁", icon: Cpu, perm: "settingsDevices" },
+  { id: "general", label: "通用", hint: "界面模式与主题", icon: SlidersHorizontal, perm: "settingsGeneral" },
 ];
 
 // Older links pointed at sections of the single long page.
-const legacyHash: Record<string, Tab> = { telegram: "notify", sim: "devices" };
+const legacyHash: Record<string, Tab> = { telegram: "notify", sim: "devices", password: "users" };
 
-function tabFromHash(hash: string): Tab {
+function tabFromHash(hash: string, allowed: { id: Tab }[]): Tab {
   const id = hash.slice(1);
-  return tabs.find((t) => t.id === id)?.id ?? legacyHash[id] ?? "notify";
+  const resolved = (allowed.find((t) => t.id === id)?.id ?? legacyHash[id]) as Tab | undefined;
+  if (resolved && allowed.some((t) => t.id === resolved)) return resolved;
+  return allowed[0]?.id ?? "general";
 }
 
 export function SettingsPage() {
   const { hash } = useLocation();
   const navigate = useNavigate();
-  const tab = tabFromHash(hash);
-  const { data: notify } = useNotify();
-  const { data: assistant } = useQuery({ queryKey: ["assistant"], queryFn: () => api.get<AssistantSettings>("/api/settings/assistant") });
-  const { data: sipSettings } = useQuery<SipSettings>({ queryKey: ["sip-settings"], queryFn: () => api.get<SipSettings>("/api/settings/sip") });
-  const { data: cloudSettings } = useQuery<CloudSettings>({ queryKey: ["cloud-settings"], queryFn: () => api.get<CloudSettings>("/api/settings/cloud") });
-  const { data: classifier } = useQuery({ queryKey: ["classifier"], queryFn: () => api.get<ClassifierSettings>("/api/settings/classifier") });
+  const { data: session } = useSession();
+  const tabs = allTabs.filter((t) => hasPerm(session, t.perm));
+  const tab = tabFromHash(hash, tabs);
+
+  const canNotify = hasPerm(session, "settingsNotify");
+  const canAssistant = hasPerm(session, "settingsAssistant");
+  const canSip = hasPerm(session, "settingsSip");
+  const canCloud = hasPerm(session, "settingsCloud");
+  const canClassifier = hasPerm(session, "settingsClassifier");
+
+  const { data: notify } = useNotify(canNotify);
+  const { data: assistant } = useQuery({ queryKey: ["assistant"], queryFn: () => api.get<AssistantSettings>("/api/settings/assistant"), enabled: canAssistant });
+  const { data: sipSettings } = useQuery<SipSettings>({ queryKey: ["sip-settings"], queryFn: () => api.get<SipSettings>("/api/settings/sip"), enabled: canSip });
+  const { data: cloudSettings } = useQuery<CloudSettings>({ queryKey: ["cloud-settings"], queryFn: () => api.get<CloudSettings>("/api/settings/cloud"), enabled: canCloud });
+  const { data: classifier } = useQuery({ queryKey: ["classifier"], queryFn: () => api.get<ClassifierSettings>("/api/settings/classifier"), enabled: canClassifier });
   const state: Partial<Record<Tab, boolean | undefined>> = {
     notify: notify && activeChannels(notify) > 0,
     assistant: assistant?.enabled || assistant?.voicemail?.enabled,
@@ -59,6 +73,16 @@ export function SettingsPage() {
     navigate({ hash: id }, { replace: true });
     window.scrollTo({ top: 0 });
   };
+
+  if (tabs.length === 0) {
+    return (
+      <Card>
+        <Empty icon={SlidersHorizontal} title="没有可用的设置项">
+          当前账号未开启任何设置页面权限，请联系管理员调整。
+        </Empty>
+      </Card>
+    );
+  }
 
   return (
     <div className="space-y-5">
@@ -90,6 +114,7 @@ export function SettingsPage() {
           })}
         </nav>
         <div key={tab} className="animate-in min-w-0 space-y-5">
+          {tab === "users" && <UserSettingsSection />}
           {tab === "notify" && <NotifySection />}
           {tab === "assistant" && <AssistantSection />}
           {tab === "sip" && <SipSection />}
@@ -97,8 +122,7 @@ export function SettingsPage() {
           {tab === "classifier" && <ClassifierSection />}
           {tab === "devices" && <DevicesSection />}
           {tab === "general" && (
-            <div className="grid gap-5 xl:grid-cols-2">
-              <PasswordSection />
+            <div className="max-w-xl">
               <AppearanceSection />
             </div>
           )}
@@ -108,66 +132,14 @@ export function SettingsPage() {
   );
 }
 
-// ---------------- Password ----------------
-
-function PasswordSection() {
-  const toast = useToast();
-  const [current, setCurrent] = useState("");
-  const [next, setNext] = useState("");
-  const [confirm, setConfirm] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
-  const strength = next.length >= 14 ? 3 : next.length >= 10 ? 2 : next.length >= 8 ? 1 : 0;
-
-  const save = async () => {
-    setBusy(true);
-    setError("");
-    try {
-      await api.put("/api/settings/password", { current, new: next });
-      toast.ok("密码已修改，其他设备上的登录已退出");
-      setCurrent("");
-      setNext("");
-      setConfirm("");
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  return (
-    <Card>
-      <CardHeader icon={KeyRound} title="后台登录密码" subtitle="修改后其他设备上的登录会自动退出" />
-      <CardBody className="space-y-4">
-        <Field label="当前密码">
-          <Input type="password" autoComplete="current-password" value={current} onChange={(e) => setCurrent(e.target.value)} />
-        </Field>
-        <Field label="新密码" hint="至少 8 位，建议 12 位以上并混合字母、数字和符号。">
-          <Input type="password" autoComplete="new-password" value={next} onChange={(e) => setNext(e.target.value)} />
-          <div className="mt-2 flex gap-1">
-            {[1, 2, 3].map((i) => (
-              <span key={i} className={clsx("h-1 flex-1 rounded-full", i <= strength ? (strength === 1 ? "bg-warn" : "bg-ok") : "bg-line-strong")} />
-            ))}
-          </div>
-        </Field>
-        <Field label="确认新密码" error={confirm && confirm !== next ? "两次输入不一致" : undefined}>
-          <Input type="password" autoComplete="new-password" value={confirm} onChange={(e) => setConfirm(e.target.value)} />
-        </Field>
-        {error && <p className="text-sm text-bad">{error}</p>}
-        <Button variant="primary" icon={Save} loading={busy} disabled={!current || next.length < 8 || next !== confirm} onClick={save}>
-          修改密码
-        </Button>
-      </CardBody>
-    </Card>
-  );
-}
-
 // ---------------- Devices ----------------
 
 // DevicesSection lists every device's own settings, each under a header
 // that says which device it is.
 function DevicesSection() {
   const { data: status } = useStatus();
+  const { data: session } = useSession();
+  const canOpenDevice = hasPerm(session, "device");
   const navigate = useNavigate();
   const devices = knownDevices(status);
   if (!status) return <Spinner />;
@@ -191,9 +163,11 @@ function DevicesSection() {
               <div className="min-w-0 flex-1">
                 <DeviceIdentity d={d} extra={d.online ? d.modem.operator || undefined : d.lastSeen ? `最后在线 ${ago(d.lastSeen)}` : undefined} />
               </div>
-              <Button size="sm" variant="ghost" icon={ArrowRight} onClick={() => navigate(`/device?d=${encodeURIComponent(d.id)}&tab=sim`)}>
-                设备页
-              </Button>
+              {canOpenDevice && (
+                <Button size="sm" variant="ghost" icon={ArrowRight} onClick={() => navigate(`/device?d=${encodeURIComponent(d.id)}&tab=sim`)}>
+                  设备页
+                </Button>
+              )}
             </div>
             <CardBody className="grid gap-5 lg:grid-cols-[minmax(0,220px)_minmax(0,1fr)]">
               <div className="space-y-2">

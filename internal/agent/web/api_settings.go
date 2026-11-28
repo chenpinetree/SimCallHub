@@ -42,6 +42,21 @@ func (s *Server) getClassifier(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// getCategories returns only SMS category names without exposing model secrets
+// or endpoint settings, so sub-accounts with Messages or Notify permissions can
+// display and filter categories.
+func (s *Server) getCategories(w http.ResponseWriter, r *http.Request) {
+	cfg, err := s.Settings.LLM(r.Context())
+	if err != nil {
+		s.serverError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"categories":        cfg.Categories,
+		"defaultCategories": classify.DefaultCategories(),
+	})
+}
+
 // classifierRequest is a configuration from the form. APIKey nil keeps the
 // stored key; "" removes it.
 type classifierRequest struct {

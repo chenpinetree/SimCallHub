@@ -241,8 +241,12 @@ func (s *Server) devices(r *http.Request, unread map[string]int) ([]deviceJSON, 
 		}
 		live[snap.Device.ID] = snap
 	}
+	user := currentUser(r)
 	out := make([]deviceJSON, 0, len(stored)+len(pending))
 	for _, d := range stored {
+		if !user.AllowsDevice(d.ID) {
+			continue
+		}
 		j := deviceJSON{
 			Calls: []callJSON{},
 			ID:    d.ID, Name: d.Name, Model: d.Model, IMEI: d.IMEI, Enabled: d.Enabled,
@@ -253,41 +257,64 @@ func (s *Server) devices(r *http.Request, unread map[string]int) ([]deviceJSON, 
 		if snap, ok := live[d.ID]; ok {
 			s.liveDevice(&j, snap)
 		}
+		if !user.HasPerm("calls") {
+			j.Calls = []callJSON{}
+		}
+		if !user.HasPerm("messages") {
+			j.Unread = 0
+		}
 		j.Health.SelfTestTarget, _ = s.Settings.SelfTestTarget(r.Context(), d.ID)
 		if j.Health.SelfTestTarget == "" {
 			j.Health.SelfTestTarget = j.Identity.Number
 		}
 		out = append(out, j)
 	}
-	for _, snap := range pending {
-		j := deviceJSON{ID: "", Name: "正在连接…", Enabled: true}
-		s.liveDevice(&j, snap)
-		out = append(out, j)
+	if user.AllowedDeviceFilter() == nil {
+		for _, snap := range pending {
+			j := deviceJSON{ID: "", Name: "正在连接…", Enabled: true}
+			s.liveDevice(&j, snap)
+			if !user.HasPerm("calls") {
+				j.Calls = []callJSON{}
+			}
+			out = append(out, j)
+		}
 	}
 	return out, nil
 }
 
 func (s *Server) status(w http.ResponseWriter, r *http.Request) {
+	user := currentUser(r)
+	allowed := user.AllowedDeviceFilter()
 	now := time.Now()
-	stats, err := s.Store.MessageStats(r.Context(), time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location()))
-	if err != nil {
-		s.serverError(w, err)
-		return
+	stats := store.Stats{Categories: map[string]int{}, UnreadByDevice: map[string]int{}}
+	if user.HasPerm("messages") {
+		var err error
+		stats, err = s.Store.MessageStatsFor(r.Context(), time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location()), allowed)
+		if err != nil {
+			s.serverError(w, err)
+			return
+		}
 	}
 	devices, err := s.devices(r, stats.UnreadByDevice)
 	if err != nil {
 		s.serverError(w, err)
 		return
 	}
-	orphans, err := s.Store.Orphans(r.Context())
-	if err != nil {
-		s.serverError(w, err)
-		return
+	orphans := 0
+	if user.IsAdmin() {
+		orphans, err = s.Store.Orphans(r.Context())
+		if err != nil {
+			s.serverError(w, err)
+			return
+		}
 	}
-	missed, err := s.Store.UnseenMissedCalls(r.Context())
-	if err != nil {
-		s.serverError(w, err)
-		return
+	missed := 0
+	if user.HasPerm("calls") {
+		missed, err = s.Store.UnseenMissedCallsFor(r.Context(), allowed)
+		if err != nil {
+			s.serverError(w, err)
+			return
+		}
 	}
 	out := statusJSON{Version: s.Version, Devices: devices, Orphans: orphans, MissedCalls: missed, ScanModes: modem.ScanModes}
 	out.Messages = statsJSON{stats.Total, stats.Unread, stats.Today, stats.Pending, stats.Categories}
@@ -299,9 +326,13 @@ func (s *Server) status(w http.ResponseWriter, r *http.Request) {
 }
 
 // device finds the connected service for the {id} in the path. It answers
-// the request itself when the device is unknown or offline.
+// the request itself when the device is unknown, forbidden, or offline.
 func (s *Server) device(w http.ResponseWriter, r *http.Request) (*service.Service, bool) {
 	id := r.PathValue("id")
+	if !currentUser(r).AllowsDevice(id) {
+		writeError(w, http.StatusForbidden, "没有该设备的访问权限")
+		return nil, false
+	}
 	if _, err := s.Store.GetDevice(r.Context(), id); err != nil {
 		if errors.Is(err, store.ErrNotFound) {
 			writeError(w, http.StatusNotFound, "设备不存在")
@@ -319,6 +350,11 @@ func (s *Server) device(w http.ResponseWriter, r *http.Request) (*service.Servic
 }
 
 func (s *Server) patchDevice(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if !currentUser(r).AllowsDevice(id) {
+		writeError(w, http.StatusForbidden, "没有该设备的访问权限")
+		return
+	}
 	var req struct {
 		Name    *string `json:"name"`
 		Enabled *bool   `json:"enabled"`
@@ -334,7 +370,6 @@ func (s *Server) patchDevice(w http.ResponseWriter, r *http.Request) {
 		}
 		req.Name = &name
 	}
-	id := r.PathValue("id")
 	if err := s.Store.UpdateDevice(r.Context(), id, req.Name, req.Enabled); err != nil {
 		if errors.Is(err, store.ErrNotFound) {
 			writeError(w, http.StatusNotFound, "设备不存在")
@@ -429,6 +464,10 @@ func (s *Server) setRecovery(w http.ResponseWriter, r *http.Request) {
 // forgetDevice removes an offline device from the list; messages stay.
 func (s *Server) forgetDevice(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
+	if !currentUser(r).AllowsDevice(id) {
+		writeError(w, http.StatusForbidden, "没有该设备的访问权限")
+		return
+	}
 	if s.Devices.Device(id) != nil {
 		writeError(w, http.StatusConflict, "设备在线，不能移除")
 		return
@@ -733,6 +772,10 @@ func (s *Server) simChangePIN(w http.ResponseWriter, r *http.Request) {
 // knownDevice checks the {id} names a stored device, online or not.
 func (s *Server) knownDevice(w http.ResponseWriter, r *http.Request) (string, bool) {
 	id := r.PathValue("id")
+	if !currentUser(r).AllowsDevice(id) {
+		writeError(w, http.StatusForbidden, "没有该设备的访问权限")
+		return "", false
+	}
 	if _, err := s.Store.GetDevice(r.Context(), id); err != nil {
 		if errors.Is(err, store.ErrNotFound) {
 			writeError(w, http.StatusNotFound, "设备不存在")
@@ -797,7 +840,8 @@ func (s *Server) putSIMSettings(w http.ResponseWriter, r *http.Request) {
 
 // activity is the dashboard's hourly and daily history of SMS and calls.
 func (s *Server) activity(w http.ResponseWriter, r *http.Request) {
-	a, err := s.Store.Activity(r.Context(), time.Now())
+	u := currentUser(r)
+	a, err := s.Store.ActivityFor(r.Context(), time.Now(), u.AllowedDeviceFilter(), u.HasPerm("messages"), u.HasPerm("calls"))
 	if err != nil {
 		s.serverError(w, err)
 		return

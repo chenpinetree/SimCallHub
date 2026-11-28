@@ -138,9 +138,9 @@ func (e *PushError) Permanent() bool {
 
 // Client manages the outbound yamux reverse tunnel to SimCallCloud when mode == "cloud".
 type Client struct {
-	Config  func(context.Context) (Config, error)
-	Note    func(ctx context.Context, level, text string)
-	Log     *slog.Logger
+	Config func(context.Context) (Config, error)
+	Note   func(ctx context.Context, level, text string)
+	Log    *slog.Logger
 
 	reloadCh chan struct{}
 

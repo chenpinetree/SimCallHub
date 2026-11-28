@@ -36,6 +36,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { api, type Activity, type ActivityBucket, type AssistantSettings, type Callback, type CallRecord, type Conversation, type DeviceStatus, type LogEvent, type Message, type Page, type Status } from "../lib/api";
+import { hasPerm, useSession } from "../lib/auth";
 import { AssistantNote, Recording } from "./Calls";
 import { useNow, useStatus } from "../lib/hooks";
 import { ago, generation, shortTime, signal, type Tone } from "../lib/format";
@@ -61,9 +62,16 @@ const toneText: Record<Tone, string> = { ok: "text-ok", warn: "text-warn", bad: 
 const toneBg: Record<Tone, string> = { ok: "bg-ok", warn: "bg-warn", bad: "bg-bad", info: "bg-info", muted: "bg-subtle" };
 
 export function Dashboard() {
+  const { data: session } = useSession();
+  const canMessages = hasPerm(session, "messages");
+  const canCalls = hasPerm(session, "calls");
+  const canDevice = hasPerm(session, "device");
+  const canLogs = hasPerm(session, "logs");
+  const canClassifier = hasPerm(session, "settingsClassifier");
+
   const { data: status, isPending } = useStatus();
   const { data: activity } = useQuery({ queryKey: ["activity"], queryFn: () => api.get<Activity>("/api/activity"), refetchInterval: 60000 });
-  const { data: callbacks } = useQuery({ queryKey: ["callbacks"], queryFn: () => api.get<{ items: Callback[] }>("/api/calls/callbacks"), refetchInterval: 60000 });
+  const { data: callbacks } = useQuery({ queryKey: ["callbacks"], queryFn: () => api.get<{ items: Callback[] }>("/api/calls/callbacks"), refetchInterval: 60000, enabled: canCalls });
   const [dialog, setDialog] = useState<{ device: DeviceStatus; kind: SimDialog } | null>(null);
   const navigate = useNavigate();
   const toast = useToast();
@@ -89,31 +97,33 @@ export function Dashboard() {
   };
 
   const issues = findIssues(status, {
-    sim: (device, kind) => setDialog({ device, kind }),
-    open: (d) => navigate(`/device?d=${encodeURIComponent(d.id)}`),
-    settings: () => navigate("/settings#classifier"),
-    radioOn,
+    sim: (device, kind) => canDevice && setDialog({ device, kind }),
+    open: (d) => canDevice && navigate(`/device?d=${encodeURIComponent(d.id)}`),
+    settings: () => canClassifier && navigate("/settings#classifier"),
+    radioOn: (d) => {
+      if (canDevice) radioOn(d);
+    },
   });
 
   return (
     <div className="space-y-4">
-      <CommandBar status={status} issues={issues} brief={briefing(status, activity, callbacks?.items)} />
-      <KpiStrip status={status} activity={activity} />
-      {issues.length > 0 && <IssuesCard issues={issues} />}
-      {!!callbacks?.items.length && <CallbacksCard items={callbacks.items} status={status} />}
+      <CommandBar status={status} issues={issues} brief={briefing(status, activity, canCalls ? callbacks?.items : undefined)} />
+      {(canMessages || canCalls) && <KpiStrip status={status} activity={activity} />}
+      {canDevice && issues.length > 0 && <IssuesCard issues={issues} />}
+      {canCalls && !!callbacks?.items.length && <CallbacksCard items={callbacks.items} status={status} />}
       <div className="grid gap-4 lg:grid-cols-3">
         <div className="min-w-0 space-y-4 lg:col-span-2">
-          <ActivityCard activity={activity} />
-          <RecentCard status={status} />
-          <CategoriesCard status={status} />
+          {(canMessages || canCalls) && <ActivityCard activity={activity} />}
+          {canMessages && <RecentCard status={status} />}
+          {canMessages && <CategoriesCard status={status} />}
         </div>
         <div className="min-w-0 space-y-4">
           <DevicesPanel status={status} />
-          <AssistantNotesCard />
-          <FeedCard status={status} />
+          {canCalls && <AssistantNotesCard />}
+          {(canMessages || canCalls || canLogs) && <FeedCard status={status} />}
         </div>
       </div>
-      {dialog && <SimDialogs deviceId={dialog.device.id} dialog={dialog.kind} onClose={() => setDialog(null)} pinRetries={dialog.device.modem.pinRetries} pukRetries={dialog.device.modem.pukRetries} />}
+      {canDevice && dialog && <SimDialogs deviceId={dialog.device.id} dialog={dialog.kind} onClose={() => setDialog(null)} pinRetries={dialog.device.modem.pinRetries} pukRetries={dialog.device.modem.pukRetries} />}
     </div>
   );
 }
@@ -252,8 +262,12 @@ function briefing(status: Status, activity: Activity | undefined, callbacks: Cal
 
 function CommandBar({ status, issues, brief }: { status: Status; issues: Issue[]; brief: string }) {
   const navigate = useNavigate();
-  const { data: notify } = useNotify();
-  const { data: assistant } = useQuery({ queryKey: ["assistant"], queryFn: () => api.get<AssistantSettings>("/api/settings/assistant") });
+  const { data: session } = useSession();
+  const canClassifier = hasPerm(session, "settingsClassifier");
+  const canAssistant = hasPerm(session, "settingsAssistant");
+  const canNotify = hasPerm(session, "settingsNotify");
+  const { data: notify } = useNotify(canNotify);
+  const { data: assistant } = useQuery({ queryKey: ["assistant"], queryFn: () => api.get<AssistantSettings>("/api/settings/assistant"), enabled: canAssistant });
   const devices = knownDevices(status).filter((d) => d.enabled);
   const online = devices.filter((d) => d.online && d.connected);
   const bad = issues.some((i) => i.tone === "bad");
@@ -261,11 +275,11 @@ function CommandBar({ status, issues, brief }: { status: Status; issues: Issue[]
   const headline = online.length === 0 ? "等待连接模组" : bad ? "有设备需要你处理" : issues.length ? `运行中，${issues.length} 项提醒` : "SIMs Manager正在守护";
   const lastSync = online.map((d) => d.lastSync).filter(Boolean).sort().pop() ?? null;
   const channels = activeChannels(notify);
-  const modules: { label: string; on: boolean | undefined; detail: string; to: string; icon: LucideIcon }[] = [
-    { label: "智能分类", on: status.classifier.ready, detail: status.classifier.ready ? "运行中" : status.classifier.enabled ? "配置不完整" : "未开启", to: "/settings#classifier", icon: Brain },
-    { label: "AI 接听", on: assistant?.enabled && !assistant.problem, detail: assistant ? (assistant.enabled ? (assistant.problem ? "有问题" : assistant.ringDelaySec ? `${assistant.ringDelaySec} 秒后接听` : "立即接听") : "未开启") : "…", to: "/settings#assistant", icon: Bot },
-    { label: "消息推送", on: channels > 0, detail: channels > 0 ? `${channels} 个渠道` : "未开启", to: "/settings#notify", icon: BellRing },
-  ];
+  const modules: { label: string; on: boolean | undefined; detail: string; to: string; icon: LucideIcon; visible: boolean }[] = [
+    { label: "智能分类", on: status.classifier.ready, detail: status.classifier.ready ? "运行中" : status.classifier.enabled ? "配置不完整" : "未开启", to: "/settings#classifier", icon: Brain, visible: canClassifier },
+    { label: "AI 接听", on: assistant?.enabled && !assistant.problem, detail: assistant ? (assistant.enabled ? (assistant.problem ? "有问题" : assistant.ringDelaySec ? `${assistant.ringDelaySec} 秒后接听` : "立即接听") : "未开启") : "…", to: "/settings#assistant", icon: Bot, visible: canAssistant },
+    { label: "消息推送", on: channels > 0, detail: channels > 0 ? `${channels} 个渠道` : "未开启", to: "/settings#notify", icon: BellRing, visible: canNotify },
+  ].filter((m) => m.visible);
   return (
     <Card glow className="grid-lines relative">
       <div className="pointer-events-none absolute inset-0 bg-gradient-to-r from-panel via-panel/85 to-panel/40" />
@@ -360,7 +374,10 @@ const spamCategories = ["营销推广", "推销骚扰"];
 
 function KpiStrip({ status, activity }: { status: Status; activity?: Activity }) {
   const navigate = useNavigate();
-  const { data: notify } = useNotify();
+  const { data: session } = useSession();
+  const canMessages = hasPerm(session, "messages");
+  const canCalls = hasPerm(session, "calls");
+  const { data: notify } = useNotify(hasPerm(session, "settingsNotify"));
   const rules = notify?.rules;
   const spamMuted = !!rules && activeChannels(notify) > 0 && (!rules.sms || spamCategories.every((c) => rules.skipCategories.includes(c)));
   const today = activity?.days[activity.days.length - 1];
@@ -370,20 +387,22 @@ function KpiStrip({ status, activity }: { status: Status; activity?: Activity })
   const v = (n?: number) => (n === undefined ? "—" : n);
   return (
     <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-6">
-      <Kpi icon={MessageSquareText} label="今日短信" value={v(today?.sms)} hint={delta(today?.sms, yesterday?.sms)} spark={hours.map((h) => h.sms)} tone="info" onClick={() => navigate("/messages")} />
-      <Kpi icon={MailOpen} label="未读短信" value={status.messages.unread} hint={status.messages.pending ? `${status.messages.pending} 条待分类` : "全部已分类"} tone="info" highlight={status.messages.unread > 0} onClick={() => navigate("/messages?unread=1")} />
-      <Kpi icon={PhoneIncoming} label="今日来电" value={v(today?.calls)} hint={delta(today?.calls, yesterday?.calls)} spark={hours.map((h) => h.calls)} tone="ok" onClick={() => navigate("/calls")} />
-      <Kpi icon={Bot} label="AI 代接" value={v(today?.ai)} hint={today?.calls ? `占今日来电 ${Math.round(((today?.ai ?? 0) / today.calls) * 100)}%` : "今日"} spark={hours.map((h) => h.ai)} tone="ok" onClick={() => navigate("/calls")} />
-      <Kpi icon={PhoneMissed} label="未接来电" value={v(today?.missed)} hint={status.missedCalls ? `${status.missedCalls} 个还没看` : "今日"} spark={hours.map((h) => h.missed)} tone={status.missedCalls ? "warn" : "muted"} highlight={status.missedCalls > 0} onClick={() => navigate("/calls")} />
-      <Kpi
-        icon={ShieldBan}
-        label="营销和骚扰"
-        value={v(today?.spam)}
-        hint={spamMuted ? "今日 · 没有推送给你" : "今日收到的营销、推销短信"}
-        spark={hours.map((h) => h.spam)}
-        tone="warn"
-        onClick={() => navigate(`/messages?category=${encodeURIComponent(spamCategories.join(","))}&since=today`)}
-      />
+      {canMessages && <Kpi icon={MessageSquareText} label="今日短信" value={v(today?.sms)} hint={delta(today?.sms, yesterday?.sms)} spark={hours.map((h) => h.sms)} tone="info" onClick={() => navigate("/messages")} />}
+      {canMessages && <Kpi icon={MailOpen} label="未读短信" value={status.messages.unread} hint={status.messages.pending ? `${status.messages.pending} 条待分类` : "全部已分类"} tone="info" highlight={status.messages.unread > 0} onClick={() => navigate("/messages?unread=1")} />}
+      {canCalls && <Kpi icon={PhoneIncoming} label="今日来电" value={v(today?.calls)} hint={delta(today?.calls, yesterday?.calls)} spark={hours.map((h) => h.calls)} tone="ok" onClick={() => navigate("/calls")} />}
+      {canCalls && <Kpi icon={Bot} label="AI 代接" value={v(today?.ai)} hint={today?.calls ? `占今日来电 ${Math.round(((today?.ai ?? 0) / today.calls) * 100)}%` : "今日"} spark={hours.map((h) => h.ai)} tone="ok" onClick={() => navigate("/calls")} />}
+      {canCalls && <Kpi icon={PhoneMissed} label="未接来电" value={v(today?.missed)} hint={status.missedCalls ? `${status.missedCalls} 个还没看` : "今日"} spark={hours.map((h) => h.missed)} tone={status.missedCalls ? "warn" : "muted"} highlight={status.missedCalls > 0} onClick={() => navigate("/calls")} />}
+      {canMessages && (
+        <Kpi
+          icon={ShieldBan}
+          label="营销和骚扰"
+          value={v(today?.spam)}
+          hint={spamMuted ? "今日 · 没有推送给你" : "今日收到的营销、推销短信"}
+          spark={hours.map((h) => h.spam)}
+          tone="warn"
+          onClick={() => navigate(`/messages?category=${encodeURIComponent(spamCategories.join(","))}&since=today`)}
+        />
+      )}
     </div>
   );
 }
@@ -529,6 +548,8 @@ function Metric({ label, value, tone }: { label: string; value: ReactNode; tone?
 
 function DevicesPanel({ status }: { status: Status }) {
   const navigate = useNavigate();
+  const { data: session } = useSession();
+  const canDevice = hasPerm(session, "device");
   if (status.devices.length === 0) return null;
   return (
     <Panel
@@ -536,14 +557,16 @@ function DevicesPanel({ status }: { status: Status }) {
       title="设备"
       tag={`${status.devices.filter((d) => d.online && d.connected).length}/${status.devices.length} online`}
       action={
-        <Button size="sm" variant="ghost" onClick={() => navigate("/device")}>
-          管理
-        </Button>
+        canDevice ? (
+          <Button size="sm" variant="ghost" onClick={() => navigate("/device")}>
+            管理
+          </Button>
+        ) : undefined
       }
       bodyClass="space-y-2.5 p-3"
     >
       {status.devices.map((d, i) => (
-        <DeviceRow key={d.id || "pending" + i} d={d} onClick={() => d.id && navigate(`/device?d=${encodeURIComponent(d.id)}`)} />
+        <DeviceRow key={d.id || "pending" + i} d={d} clickable={canDevice} onClick={() => canDevice && d.id && navigate(`/device?d=${encodeURIComponent(d.id)}`)} />
       ))}
     </Panel>
   );
@@ -558,14 +581,14 @@ function signalAdvice(bars: number, sinr: number | null): string {
   return "信号一般，可以调整天线位置让信号更稳定。";
 }
 
-function DeviceRow({ d, onClick }: { d: DeviceStatus; onClick: () => void }) {
+function DeviceRow({ d, clickable, onClick }: { d: DeviceStatus; clickable: boolean; onClick: () => void }) {
   const health = deviceHealth(d);
   const sig = signal(d.modem);
   const live = d.online && d.connected;
   const cell = d.modem.cell;
   const weak = live ? signalAdvice(sig.bars, cell?.valid ? cell.sinr : null) : "";
   return (
-    <button type="button" onClick={onClick} className={clsx("w-full rounded-xl bg-panel-2/60 p-3 text-left ring-1 ring-line transition hover:ring-accent/40", !d.enabled && "opacity-60")}>
+    <button type="button" disabled={!clickable} onClick={onClick} className={clsx("w-full rounded-xl bg-panel-2/60 p-3 text-left ring-1 ring-line transition enabled:hover:ring-accent/40", !d.enabled && "opacity-60")}>
       <div className="flex items-center gap-2">
         {d.id ? <DeviceAvatar d={d} size="sm" /> : <Loader2 className="size-3.5 animate-spin text-muted" />}
         <span className="min-w-0 truncate text-[13px] font-semibold">{d.name}</span>
@@ -668,9 +691,13 @@ interface FeedItem {
 
 function FeedCard({ status }: { status: Status }) {
   const navigate = useNavigate();
-  const events = useQuery({ queryKey: ["events", "feed"], queryFn: () => api.get<LogEvent[]>("/api/events?limit=40") });
-  const messages = useQuery({ queryKey: ["messages", "feed"], queryFn: () => api.get<Page<Message>>("/api/messages?pageSize=10") });
-  const calls = useQuery({ queryKey: ["calls", "dashboard"], queryFn: () => api.get<Page<CallRecord>>("/api/calls?page=1&pageSize=30") });
+  const { data: session } = useSession();
+  const canLogs = hasPerm(session, "logs");
+  const canMessages = hasPerm(session, "messages");
+  const canCalls = hasPerm(session, "calls");
+  const events = useQuery({ queryKey: ["events", "feed"], queryFn: () => api.get<LogEvent[]>("/api/events?limit=40"), enabled: canLogs });
+  const messages = useQuery({ queryKey: ["messages", "feed"], queryFn: () => api.get<Page<Message>>("/api/messages?pageSize=10"), enabled: canMessages });
+  const calls = useQuery({ queryKey: ["calls", "dashboard"], queryFn: () => api.get<Page<CallRecord>>("/api/calls?page=1&pageSize=30"), enabled: canCalls });
   const multi = knownDevices(status).length > 1;
   const where = (id: string) => (multi ? `${deviceName(status, id)} · ` : "");
 
@@ -715,7 +742,7 @@ function FeedCard({ status }: { status: Status }) {
   }
   items.sort((x, y) => y.at.localeCompare(x.at));
   const shown = items.slice(0, 14);
-  const loading = events.isPending || messages.isPending || calls.isPending;
+  const loading = (canLogs && events.isPending) || (canMessages && messages.isPending) || (canCalls && calls.isPending);
 
   return (
     <Panel
@@ -723,9 +750,11 @@ function FeedCard({ status }: { status: Status }) {
       title="实时动态"
       tag="live"
       action={
-        <Button size="sm" variant="ghost" onClick={() => navigate("/logs")}>
-          日志
-        </Button>
+        canLogs ? (
+          <Button size="sm" variant="ghost" onClick={() => navigate("/logs")}>
+            日志
+          </Button>
+        ) : undefined
       }
       bodyClass="p-0"
     >

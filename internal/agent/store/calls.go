@@ -175,10 +175,23 @@ func (s *Store) EndOpenCalls(ctx context.Context, deviceID string, at time.Time)
 // ListCalls returns the call log newest first; missed selects unanswered
 // incoming calls.
 func (s *Store) ListCalls(ctx context.Context, deviceID, kind string, limit, offset int) ([]CallRecord, int, error) {
+	return s.ListCallsFor(ctx, deviceID, kind, nil, limit, offset)
+}
+
+// ListCallsFor returns the call log restricted to allowedDevices (nil = all).
+func (s *Store) ListCallsFor(ctx context.Context, deviceID, kind string, allowedDevices []string, limit, offset int) ([]CallRecord, int, error) {
 	where, args := "WHERE 1 = 1", []any{}
 	if deviceID != "" {
 		where += " AND device_id = ?"
 		args = append(args, deviceID)
+	}
+	if allowedDevices != nil {
+		if len(allowedDevices) == 0 {
+			return nil, 0, nil
+		}
+		in, list := inStrings(allowedDevices)
+		where += " AND device_id IN " + in
+		args = append(args, list...)
 	}
 	switch kind {
 	case CallsMissed:
@@ -218,15 +231,64 @@ func (s *Store) GetCall(ctx context.Context, id int64) (CallRecord, error) {
 
 // UnseenMissedCalls counts missed calls not looked at yet.
 func (s *Store) UnseenMissedCalls(ctx context.Context) (int, error) {
+	return s.UnseenMissedCallsFor(ctx, nil)
+}
+
+func (s *Store) UnseenMissedCallsFor(ctx context.Context, allowedDevices []string) (int, error) {
+	if allowedDevices != nil && len(allowedDevices) == 0 {
+		return 0, nil
+	}
+	where, args := "seen = 0", []any{}
+	if allowedDevices != nil {
+		in, list := inStrings(allowedDevices)
+		where += " AND device_id IN " + in
+		args = append(args, list...)
+	}
 	var n int
-	err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM calls WHERE seen = 0`).Scan(&n)
+	err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM calls WHERE `+where, args...).Scan(&n)
 	return n, err
 }
 
 // MarkCallsSeen clears the missed-call badge.
 func (s *Store) MarkCallsSeen(ctx context.Context) error {
-	_, err := s.db.ExecContext(ctx, `UPDATE calls SET seen = 1 WHERE seen = 0`)
+	return s.MarkCallsSeenFor(ctx, nil)
+}
+
+func (s *Store) MarkCallsSeenFor(ctx context.Context, allowedDevices []string) error {
+	if allowedDevices != nil && len(allowedDevices) == 0 {
+		return nil
+	}
+	where, args := "seen = 0", []any{}
+	if allowedDevices != nil {
+		in, list := inStrings(allowedDevices)
+		where += " AND device_id IN " + in
+		args = append(args, list...)
+	}
+	_, err := s.db.ExecContext(ctx, `UPDATE calls SET seen = 1 WHERE `+where, args...)
 	return err
+}
+
+// CallDeviceIDs returns the device_id of each existing call in ids.
+func (s *Store) CallDeviceIDs(ctx context.Context, ids []int64) (map[int64]string, error) {
+	out := make(map[int64]string, len(ids))
+	if len(ids) == 0 {
+		return out, nil
+	}
+	in, args := inList(ids)
+	rows, err := s.db.QueryContext(ctx, `SELECT id, device_id FROM calls WHERE id IN `+in, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id int64
+		var dev string
+		if err := rows.Scan(&id, &dev); err != nil {
+			return nil, err
+		}
+		out[id] = dev
+	}
+	return out, rows.Err()
 }
 
 // DeleteCalls removes call log entries.
@@ -248,13 +310,26 @@ func (s *Store) DeleteCalls(ctx context.Context, ids []int64) (int, error) {
 // is left out once it is marked done or the number was called afterwards;
 // only the latest call per number is returned, newest first.
 func (s *Store) CallbackCandidates(ctx context.Context, since time.Time) ([]CallRecord, error) {
+	return s.CallbackCandidatesFor(ctx, since, nil)
+}
+
+func (s *Store) CallbackCandidatesFor(ctx context.Context, since time.Time, allowedDevices []string) ([]CallRecord, error) {
+	if allowedDevices != nil && len(allowedDevices) == 0 {
+		return nil, nil
+	}
+	devClause := ""
+	args := []any{since.Unix(), HandledByAssistant, CallMissed, CallRejected, CallCompleted}
+	if allowedDevices != nil {
+		in, list := inStrings(allowedDevices)
+		devClause = " AND c.device_id IN " + in
+		args = append(args, list...)
+	}
 	rows, err := s.db.QueryContext(ctx, `SELECT `+callColumns+` FROM calls c
 		WHERE direction = 'in' AND peer <> '' AND started_at >= ? AND callback_done = 0
 			AND (handled_by = ? OR status IN (?, ?))
 			AND NOT EXISTS (SELECT 1 FROM calls o WHERE o.peer = c.peer AND o.started_at > c.started_at
-				AND (o.direction = 'out' OR o.status = ? AND o.handled_by = ''))
-		ORDER BY started_at DESC, id DESC`,
-		since.Unix(), HandledByAssistant, CallMissed, CallRejected, CallCompleted)
+				AND (o.direction = 'out' OR o.status = ? AND o.handled_by = ''))`+devClause+`
+		ORDER BY started_at DESC, id DESC`, args...)
 	if err != nil {
 		return nil, err
 	}

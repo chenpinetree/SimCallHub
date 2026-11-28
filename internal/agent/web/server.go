@@ -3,6 +3,7 @@
 package web
 
 import (
+	"context"
 	"embed"
 	"encoding/json"
 	"errors"
@@ -108,6 +109,23 @@ func (s *Server) Handler() http.Handler {
 		mux.HandleFunc(pattern, h)
 	}
 	authed := func(pattern string, h http.HandlerFunc) { api(pattern, s.requireAuth(h)) }
+	perm := func(keys ...string) func(string, http.HandlerFunc) {
+		return func(pattern string, h http.HandlerFunc) {
+			api(pattern, s.requireAuth(s.requirePerm(keys, h)))
+		}
+	}
+	adminOnly := perm("admin")
+	msgPerm := perm("messages")
+	callPerm := perm("calls")
+	contactPerm := perm("contacts")
+	devicePerm := perm("device")
+	simSettingsPerm := perm("device", "settingsDevices")
+	logPerm := perm("logs")
+	classifierPerm := perm("settingsClassifier")
+	sipPerm := perm("settingsSip")
+	cloudPerm := perm("settingsCloud")
+	notifyPerm := perm("settingsNotify")
+	assistantPerm := perm("settingsAssistant")
 
 	api("GET /api/session", s.session)
 	api("GET /api/version", func(w http.ResponseWriter, r *http.Request) {
@@ -118,67 +136,74 @@ func (s *Server) Handler() http.Handler {
 	authed("GET /api/stream", s.stream)
 
 	authed("GET /api/status", s.status)
-	authed("GET /api/events", s.events)
 	authed("GET /api/activity", s.activity)
-	authed("PATCH /api/devices/{id}", s.patchDevice)
-	authed("DELETE /api/devices/{id}", s.forgetDevice)
-	authed("POST /api/devices/{id}/adopt", s.adoptOrphans)
-	authed("POST /api/devices/{id}/selftest", s.selfTest)
-	authed("PUT /api/devices/{id}/recovery", s.setRecovery)
-	authed("POST /api/devices/{id}/refresh", s.deviceRefresh)
-	authed("POST /api/devices/{id}/reboot", s.deviceReboot)
-	authed("POST /api/devices/{id}/radio", s.deviceRadio)
-	authed("POST /api/devices/{id}/scan-mode", s.deviceScanMode)
-	authed("POST /api/devices/{id}/console", s.deviceConsole)
-	authed("POST /api/devices/{id}/sim/pin", s.simPIN)
-	authed("POST /api/devices/{id}/sim/puk", s.simPUK)
-	authed("POST /api/devices/{id}/sim/lock", s.simLock)
-	authed("POST /api/devices/{id}/sim/change-pin", s.simChangePIN)
-	authed("GET /api/devices/{id}/sim-settings", s.getSIMSettings)
-	authed("PUT /api/devices/{id}/sim-settings", s.putSIMSettings)
+	authed("GET /api/categories", s.getCategories)
+	logPerm("GET /api/events", s.events)
 
-	authed("GET /api/devices/{id}/esim", s.deviceESimInfo)
-	authed("POST /api/devices/{id}/esim/enable", s.deviceESimEnable)
-	authed("POST /api/devices/{id}/esim/disable", s.deviceESimDisable)
-	authed("POST /api/devices/{id}/esim/delete", s.deviceESimDelete)
-	authed("POST /api/devices/{id}/esim/nickname", s.deviceESimNickname)
+	devicePerm("PATCH /api/devices/{id}", s.patchDevice)
+	devicePerm("DELETE /api/devices/{id}", s.forgetDevice)
+	devicePerm("POST /api/devices/{id}/adopt", s.adoptOrphans)
+	devicePerm("POST /api/devices/{id}/selftest", s.selfTest)
+	devicePerm("PUT /api/devices/{id}/recovery", s.setRecovery)
+	devicePerm("POST /api/devices/{id}/refresh", s.deviceRefresh)
+	devicePerm("POST /api/devices/{id}/reboot", s.deviceReboot)
+	devicePerm("POST /api/devices/{id}/radio", s.deviceRadio)
+	devicePerm("POST /api/devices/{id}/scan-mode", s.deviceScanMode)
+	devicePerm("POST /api/devices/{id}/console", s.deviceConsole)
+	devicePerm("POST /api/devices/{id}/sim/pin", s.simPIN)
+	devicePerm("POST /api/devices/{id}/sim/puk", s.simPUK)
+	devicePerm("POST /api/devices/{id}/sim/lock", s.simLock)
+	devicePerm("POST /api/devices/{id}/sim/change-pin", s.simChangePIN)
+	simSettingsPerm("GET /api/devices/{id}/sim-settings", s.getSIMSettings)
+	simSettingsPerm("PUT /api/devices/{id}/sim-settings", s.putSIMSettings)
 
-	authed("GET /api/conversations", s.listConversations)
-	authed("GET /api/conversations/messages", s.conversationMessages)
-	authed("POST /api/conversations/read", s.readConversation)
-	authed("POST /api/conversations/delete", s.deleteConversation)
-	authed("POST /api/messages/send", s.sendMessage)
-	authed("POST /api/messages/{id}/resend", s.resendMessage)
+	devicePerm("GET /api/devices/{id}/esim", s.deviceESimInfo)
+	devicePerm("POST /api/devices/{id}/esim/enable", s.deviceESimEnable)
+	devicePerm("POST /api/devices/{id}/esim/disable", s.deviceESimDisable)
+	devicePerm("POST /api/devices/{id}/esim/delete", s.deviceESimDelete)
+	devicePerm("POST /api/devices/{id}/esim/nickname", s.deviceESimNickname)
 
-	authed("GET /api/messages", s.listMessages)
-	authed("GET /api/messages/{id}", s.getMessage)
-	authed("GET /api/messages/{id}/redacted", s.redactedMessage)
-	authed("GET /api/messages/{id}/classification", s.messageClassification)
-	authed("GET /api/classify/logs", s.classifyLogs)
-	authed("PATCH /api/messages/{id}", s.patchMessage)
-	authed("DELETE /api/messages/{id}", s.deleteMessage)
-	authed("POST /api/messages/bulk", s.bulkMessages)
-	authed("POST /api/messages/{id}/mms/download", s.downloadMMS)
-	authed("GET /api/messages/{id}/mms/{part}", s.mmsPartData)
+	msgPerm("GET /api/conversations", s.listConversations)
+	msgPerm("GET /api/conversations/messages", s.conversationMessages)
+	msgPerm("POST /api/conversations/read", s.readConversation)
+	msgPerm("POST /api/conversations/delete", s.deleteConversation)
+	msgPerm("POST /api/messages/send", s.sendMessage)
+	msgPerm("POST /api/messages/{id}/resend", s.resendMessage)
 
-	authed("PUT /api/settings/password", s.putPassword)
-	authed("GET /api/settings/classifier", s.getClassifier)
-	authed("PUT /api/settings/classifier", s.putClassifier)
-	authed("POST /api/settings/classifier/test", s.testClassifier)
-	authed("POST /api/settings/classifier/preview", s.previewClassifier)
-	authed("POST /api/settings/classifier/reclassify", s.reclassifyAll)
-	authed("GET /api/settings/sip", s.getSIP)
-	authed("PUT /api/settings/sip", s.putSIP)
-	authed("GET /api/settings/cloud", s.getCloud)
-	authed("PUT /api/settings/cloud", s.putCloud)
-	authed("POST /api/settings/cloud/pair", s.pairCloud)
-	authed("POST /api/settings/cloud/unbind", s.unbindCloud)
-	authed("POST /api/settings/cloud/test-push", s.testCloudPush)
+	msgPerm("GET /api/messages", s.listMessages)
+	msgPerm("GET /api/messages/{id}", s.getMessage)
+	msgPerm("GET /api/messages/{id}/redacted", s.redactedMessage)
+	msgPerm("GET /api/messages/{id}/classification", s.messageClassification)
+	classifierPerm("GET /api/classify/logs", s.classifyLogs)
+	msgPerm("PATCH /api/messages/{id}", s.patchMessage)
+	msgPerm("DELETE /api/messages/{id}", s.deleteMessage)
+	msgPerm("POST /api/messages/bulk", s.bulkMessages)
+	msgPerm("POST /api/messages/{id}/mms/download", s.downloadMMS)
+	msgPerm("GET /api/messages/{id}/mms/{part}", s.mmsPartData)
 
-	s.routeCalls(authed)
-	s.routeAssistant(authed)
-	s.routeNotify(authed)
-	s.routeContacts(authed)
+	adminOnly("PUT /api/settings/password", s.putPassword)
+	adminOnly("GET /api/users", s.listUsers)
+	adminOnly("POST /api/users", s.createUser)
+	adminOnly("PUT /api/users/{username}", s.updateUser)
+	adminOnly("DELETE /api/users/{username}", s.deleteUser)
+
+	classifierPerm("GET /api/settings/classifier", s.getClassifier)
+	classifierPerm("PUT /api/settings/classifier", s.putClassifier)
+	classifierPerm("POST /api/settings/classifier/test", s.testClassifier)
+	classifierPerm("POST /api/settings/classifier/preview", s.previewClassifier)
+	classifierPerm("POST /api/settings/classifier/reclassify", s.reclassifyAll)
+	sipPerm("GET /api/settings/sip", s.getSIP)
+	sipPerm("PUT /api/settings/sip", s.putSIP)
+	cloudPerm("GET /api/settings/cloud", s.getCloud)
+	cloudPerm("PUT /api/settings/cloud", s.putCloud)
+	cloudPerm("POST /api/settings/cloud/pair", s.pairCloud)
+	cloudPerm("POST /api/settings/cloud/unbind", s.unbindCloud)
+	cloudPerm("POST /api/settings/cloud/test-push", s.testCloudPush)
+
+	s.routeCalls(callPerm)
+	s.routeAssistant(assistantPerm, callPerm)
+	s.routeNotify(notifyPerm)
+	s.routeContacts(contactPerm)
 
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "接口不存在")
@@ -256,9 +281,18 @@ func (s *Server) sameOrigin(next http.HandlerFunc) http.HandlerFunc {
 	}
 }
 
+type userContextKey struct{}
+
+func currentUser(r *http.Request) store.User {
+	if u, ok := r.Context().Value(userContextKey{}).(store.User); ok {
+		return u
+	}
+	return store.User{}
+}
+
 func (s *Server) requireAuth(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		ok, err := s.authenticated(w, r)
+		u, ok, err := s.authenticated(w, r)
 		if err != nil {
 			s.serverError(w, err)
 			return
@@ -267,47 +301,79 @@ func (s *Server) requireAuth(next http.HandlerFunc) http.HandlerFunc {
 			writeError(w, http.StatusUnauthorized, "请先登录")
 			return
 		}
-		next(w, r)
+		ctx := context.WithValue(r.Context(), userContextKey{}, u)
+		next(w, r.WithContext(ctx))
+	}
+}
+
+func (s *Server) requirePerm(keys []string, next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		u := currentUser(r)
+		for _, k := range keys {
+			if u.HasPerm(k) {
+				next(w, r)
+				return
+			}
+		}
+		writeError(w, http.StatusForbidden, "当前账号没有此功能的访问权限")
 	}
 }
 
 // authenticated checks the cloud relay context, bearer token, or session cookie
-// and, for an active session, extends it.
-func (s *Server) authenticated(w http.ResponseWriter, r *http.Request) (bool, error) {
+// and returns the active user (extending the session when needed).
+func (s *Server) authenticated(w http.ResponseWriter, r *http.Request) (store.User, bool, error) {
 	if _, viaCloud := cloudrelay.FromRequest(r); viaCloud {
-		return true, nil
+		admin, err := s.Store.GetAdmin(r.Context())
+		if err != nil {
+			admin = store.User{Username: Username, Role: store.RoleAdmin, Permissions: store.AllPermissions(), DeviceScope: store.DeviceScopeAll}
+		}
+		return admin, true, nil
 	}
 	now := time.Now()
 	if token := bearerToken(r); token != "" {
-		_, err := s.Store.SessionUser(r.Context(), hashToken(token), now)
+		username, err := s.Store.SessionUser(r.Context(), hashToken(token), now)
 		if errors.Is(err, store.ErrNotFound) {
-			return false, nil
+			return store.User{}, false, nil
 		}
 		if err != nil {
-			return false, err
+			return store.User{}, false, err
+		}
+		u, err := s.Store.GetUser(r.Context(), username)
+		if errors.Is(err, store.ErrNotFound) || (err == nil && u.Disabled) {
+			return store.User{}, false, nil
+		}
+		if err != nil {
+			return store.User{}, false, err
 		}
 		_, err = s.Store.ExtendSession(r.Context(), hashToken(token), now, sessionTTL, sessionRenewEvery)
-		return true, err
+		return u, true, err
 	}
 	token := sessionToken(r)
 	if token == "" {
-		return false, nil
+		return store.User{}, false, nil
 	}
-	_, err := s.Store.SessionUser(r.Context(), hashToken(token), now)
+	username, err := s.Store.SessionUser(r.Context(), hashToken(token), now)
 	if errors.Is(err, store.ErrNotFound) {
-		return false, nil
+		return store.User{}, false, nil
 	}
 	if err != nil {
-		return false, err
+		return store.User{}, false, err
+	}
+	u, err := s.Store.GetUser(r.Context(), username)
+	if errors.Is(err, store.ErrNotFound) || (err == nil && u.Disabled) {
+		return store.User{}, false, nil
+	}
+	if err != nil {
+		return store.User{}, false, err
 	}
 	extended, err := s.Store.ExtendSession(r.Context(), hashToken(token), now, sessionTTL, sessionRenewEvery)
 	if err != nil {
-		return false, err
+		return store.User{}, false, err
 	}
 	if extended {
 		s.setSessionCookie(w, token)
 	}
-	return true, nil
+	return u, true, nil
 }
 
 // bearerToken extracts an API Bearer token from Authorization header (or ?token= for GET/WebSocket).

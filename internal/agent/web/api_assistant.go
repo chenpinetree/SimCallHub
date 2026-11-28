@@ -470,15 +470,15 @@ func rawJSON(text string) json.RawMessage {
 	return json.RawMessage(text)
 }
 
-func (s *Server) routeAssistant(authed func(string, http.HandlerFunc)) {
-	authed("GET /api/settings/assistant", s.getAssistant)
-	authed("PUT /api/settings/assistant", s.putAssistant)
-	authed("POST /api/settings/assistant/test", s.testAssistant)
-	authed("POST /api/settings/assistant/voicemail/generate", s.generateVoicemail)
-	authed("PATCH /api/settings/assistant/voicemail/{id}", s.patchVoicemailItem)
-	authed("DELETE /api/settings/assistant/voicemail/{id}", s.deleteVoicemailItem)
-	authed("GET /api/settings/assistant/voicemail/{id}/audio", s.voicemailAudio)
-	authed("POST /api/devices/{id}/call/assistant", s.callAction((*service.Service).AnswerWithAssistant))
-	authed("POST /api/devices/{id}/call/assistant/skip", s.callAction((*service.Service).SkipAssistant))
-	authed("POST /api/devices/{id}/call/takeover", s.callAction((*service.Service).TakeOver))
+func (s *Server) routeAssistant(settingsPerm, callPerm func(string, http.HandlerFunc)) {
+	settingsPerm("GET /api/settings/assistant", s.getAssistant)
+	settingsPerm("PUT /api/settings/assistant", s.putAssistant)
+	settingsPerm("POST /api/settings/assistant/test", s.testAssistant)
+	settingsPerm("POST /api/settings/assistant/voicemail/generate", s.generateVoicemail)
+	settingsPerm("PATCH /api/settings/assistant/voicemail/{id}", s.patchVoicemailItem)
+	settingsPerm("DELETE /api/settings/assistant/voicemail/{id}", s.deleteVoicemailItem)
+	settingsPerm("GET /api/settings/assistant/voicemail/{id}/audio", s.voicemailAudio)
+	callPerm("POST /api/devices/{id}/call/assistant", s.callAction((*service.Service).AnswerWithAssistant))
+	callPerm("POST /api/devices/{id}/call/assistant/skip", s.callAction((*service.Service).SkipAssistant))
+	callPerm("POST /api/devices/{id}/call/takeover", s.callAction((*service.Service).TakeOver))
 }

@@ -170,9 +170,16 @@ CREATE TABLE IF NOT EXISTS events (
 );
 
 CREATE TABLE IF NOT EXISTS users (
-	username      TEXT PRIMARY KEY,
-	password_hash TEXT    NOT NULL,
-	updated_at    INTEGER NOT NULL
+	username        TEXT    PRIMARY KEY,
+	password_hash   TEXT    NOT NULL,
+	role            TEXT    NOT NULL DEFAULT 'admin',
+	disabled        INTEGER NOT NULL DEFAULT 0,
+	permissions     TEXT    NOT NULL DEFAULT '{}',
+	device_scope    TEXT    NOT NULL DEFAULT 'all',
+	allowed_devices TEXT    NOT NULL DEFAULT '[]',
+	note            TEXT    NOT NULL DEFAULT '',
+	created_at      INTEGER NOT NULL DEFAULT 0,
+	updated_at      INTEGER NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS sessions (
@@ -251,6 +258,13 @@ var addedColumns = []struct{ table, column, definition string }{
 	{"calls", "recording", "TEXT NOT NULL DEFAULT ''"},
 	{"calls", "callback_done", "INTEGER NOT NULL DEFAULT 0"},
 	{"contacts", "avatar", "BLOB"},
+	{"users", "role", "TEXT NOT NULL DEFAULT 'admin'"},
+	{"users", "disabled", "INTEGER NOT NULL DEFAULT 0"},
+	{"users", "permissions", "TEXT NOT NULL DEFAULT '{}'"},
+	{"users", "device_scope", "TEXT NOT NULL DEFAULT 'all'"},
+	{"users", "allowed_devices", "TEXT NOT NULL DEFAULT '[]'"},
+	{"users", "note", "TEXT NOT NULL DEFAULT ''"},
+	{"users", "created_at", "INTEGER NOT NULL DEFAULT 0"},
 }
 
 // migrate brings existing tables up to date, then creates anything missing.
@@ -580,12 +594,13 @@ type Filter struct {
 	Query string // substring of sender or body
 	// Category is an exact category, several separated by commas, or
 	// Uncategorized for messages not yet classified.
-	Category string
-	Since    time.Time // received at or after
-	Sender   string    // exact sender
-	Unread   bool
-	DeviceID string
-	Peer     string // normalised, see NormalizePeer
+	Category       string
+	Since          time.Time // received at or after
+	Sender         string    // exact sender
+	Unread         bool
+	DeviceID       string
+	AllowedDevices []string // nil = unrestricted; non-nil = restricted to these device IDs
+	Peer           string   // normalised, see NormalizePeer
 }
 
 // Uncategorized selects messages that have not been classified yet.
@@ -626,6 +641,15 @@ func (f Filter) where() (string, []any) {
 	if f.DeviceID != "" {
 		clauses = append(clauses, `device_id = ?`)
 		args = append(args, f.DeviceID)
+	}
+	if f.AllowedDevices != nil {
+		if len(f.AllowedDevices) == 0 {
+			clauses = append(clauses, `1 = 0`)
+		} else {
+			in, list := inStrings(f.AllowedDevices)
+			clauses = append(clauses, `device_id IN `+in)
+			args = append(args, list...)
+		}
 	}
 	if f.Peer != "" {
 		clauses = append(clauses, `peer = ?`)
@@ -719,13 +743,50 @@ func (s *Store) DeleteMessages(ctx context.Context, ids []int64) (int, error) {
 
 // MarkRead sets the read flag of messages; with no ids it applies to all.
 func (s *Store) MarkRead(ctx context.Context, ids []int64, read bool) error {
+	return s.MarkReadFor(ctx, ids, read, nil)
+}
+
+// MarkReadFor sets the read flag of messages within allowedDevices (nil = all).
+func (s *Store) MarkReadFor(ctx context.Context, ids []int64, read bool, allowedDevices []string) error {
 	if len(ids) == 0 {
-		_, err := s.db.ExecContext(ctx, `UPDATE messages SET read = ? WHERE direction = 'in'`, read)
+		where, args := "direction = 'in'", []any{read}
+		if allowedDevices != nil {
+			if len(allowedDevices) == 0 {
+				return nil
+			}
+			in, list := inStrings(allowedDevices)
+			where += " AND device_id IN " + in
+			args = append(args, list...)
+		}
+		_, err := s.db.ExecContext(ctx, `UPDATE messages SET read = ? WHERE `+where, args...)
 		return err
 	}
 	in, args := inList(ids)
 	_, err := s.db.ExecContext(ctx, `UPDATE messages SET read = ? WHERE id IN `+in, append([]any{read}, args...)...)
 	return err
+}
+
+// MessageDeviceIDs returns the device_id of each existing message in ids.
+func (s *Store) MessageDeviceIDs(ctx context.Context, ids []int64) (map[int64]string, error) {
+	out := make(map[int64]string, len(ids))
+	if len(ids) == 0 {
+		return out, nil
+	}
+	in, args := inList(ids)
+	rows, err := s.db.QueryContext(ctx, `SELECT id, device_id FROM messages WHERE id IN `+in, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id int64
+		var dev string
+		if err := rows.Scan(&id, &dev); err != nil {
+			return nil, err
+		}
+		out[id] = dev
+	}
+	return out, rows.Err()
 }
 
 // SetCategory records the category of a message.
@@ -790,14 +851,29 @@ type Stats struct {
 
 // MessageStats counts messages; "today" starts at dayStart.
 func (s *Store) MessageStats(ctx context.Context, dayStart time.Time) (Stats, error) {
+	return s.MessageStatsFor(ctx, dayStart, nil)
+}
+
+// MessageStatsFor counts messages restricted to allowedDevices (nil = all).
+func (s *Store) MessageStatsFor(ctx context.Context, dayStart time.Time, allowedDevices []string) (Stats, error) {
 	st := Stats{Categories: make(map[string]int), UnreadByDevice: make(map[string]int)}
+	if allowedDevices != nil && len(allowedDevices) == 0 {
+		return st, nil
+	}
+	devClause := ""
+	var devArgs []any
+	if allowedDevices != nil {
+		in, list := inStrings(allowedDevices)
+		devClause = " AND device_id IN " + in
+		devArgs = list
+	}
 	err := s.db.QueryRowContext(ctx, `
 		SELECT COUNT(*), COALESCE(SUM(read = 0), 0), COALESCE(SUM(received_at >= ?), 0), COALESCE(SUM(category = ''), 0)
-		FROM messages WHERE direction = 'in'`, dayStart.Unix()).Scan(&st.Total, &st.Unread, &st.Today, &st.Pending)
+		FROM messages WHERE direction = 'in'`+devClause, append([]any{dayStart.Unix()}, devArgs...)...).Scan(&st.Total, &st.Unread, &st.Today, &st.Pending)
 	if err != nil {
 		return st, err
 	}
-	unread, err := s.db.QueryContext(ctx, `SELECT device_id, COUNT(*) FROM messages WHERE direction = 'in' AND read = 0 GROUP BY device_id`)
+	unread, err := s.db.QueryContext(ctx, `SELECT device_id, COUNT(*) FROM messages WHERE direction = 'in' AND read = 0`+devClause+` GROUP BY device_id`, devArgs...)
 	if err != nil {
 		return st, err
 	}
@@ -811,7 +887,7 @@ func (s *Store) MessageStats(ctx context.Context, dayStart time.Time) (Stats, er
 		st.UnreadByDevice[id] = n
 	}
 	unread.Close()
-	rows, err := s.db.QueryContext(ctx, `SELECT category, COUNT(*) FROM messages WHERE category <> '' AND direction = 'in' GROUP BY category`)
+	rows, err := s.db.QueryContext(ctx, `SELECT category, COUNT(*) FROM messages WHERE category <> '' AND direction = 'in'`+devClause+` GROUP BY category`, devArgs...)
 	if err != nil {
 		return st, err
 	}
@@ -1135,10 +1211,11 @@ func (s *Store) SetPasswordHash(ctx context.Context, username, hash string) erro
 		return err
 	}
 	defer tx.Rollback()
+	now := time.Now().Unix()
 	if _, err := tx.ExecContext(ctx, `
-		INSERT INTO users (username, password_hash, updated_at) VALUES (?, ?, ?)
+		INSERT INTO users (username, password_hash, role, created_at, updated_at) VALUES (?, ?, 'admin', ?, ?)
 		ON CONFLICT(username) DO UPDATE SET password_hash = excluded.password_hash, updated_at = excluded.updated_at`,
-		username, hash, time.Now().Unix()); err != nil {
+		username, hash, now, now); err != nil {
 		return err
 	}
 	if _, err := tx.ExecContext(ctx, `DELETE FROM sessions WHERE username = ?`, username); err != nil {

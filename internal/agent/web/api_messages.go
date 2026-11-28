@@ -75,12 +75,13 @@ func (s *Server) listMessages(w http.ResponseWriter, r *http.Request) {
 		size = defaultPageSize
 	}
 	filter := store.Filter{
-		Query:    q.Get("q"),
-		Category: q.Get("category"),
-		Since:    since(q.Get("since")),
-		Sender:   q.Get("sender"),
-		Unread:   q.Get("unread") == "1" || q.Get("unread") == "true",
-		DeviceID: q.Get("device"),
+		Query:          q.Get("q"),
+		Category:       q.Get("category"),
+		Since:          since(q.Get("since")),
+		Sender:         q.Get("sender"),
+		Unread:         q.Get("unread") == "1" || q.Get("unread") == "true",
+		DeviceID:       q.Get("device"),
+		AllowedDevices: currentUser(r).AllowedDeviceFilter(),
 	}
 	messages, total, err := s.Store.ListMessages(r.Context(), filter, size, (page-1)*size)
 	if err != nil {
@@ -119,6 +120,10 @@ func (s *Server) loadMessage(w http.ResponseWriter, r *http.Request) (store.Mess
 		s.serverError(w, err)
 		return m, false
 	}
+	if !currentUser(r).AllowsDevice(m.DeviceID) {
+		writeError(w, http.StatusForbidden, "没有该设备的访问权限")
+		return store.Message{}, false
+	}
 	return m, true
 }
 
@@ -143,10 +148,11 @@ func (s *Server) redactedMessage(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) patchMessage(w http.ResponseWriter, r *http.Request) {
-	id, valid := s.messageID(w, r)
-	if !valid {
+	m, found := s.loadMessage(w, r)
+	if !found {
 		return
 	}
+	id := m.ID
 	var req struct {
 		Read     *bool   `json:"read"`
 		Category *string `json:"category"`
@@ -187,11 +193,11 @@ func (s *Server) patchMessage(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) deleteMessage(w http.ResponseWriter, r *http.Request) {
-	id, valid := s.messageID(w, r)
-	if !valid {
+	m, found := s.loadMessage(w, r)
+	if !found {
 		return
 	}
-	n, err := s.Store.DeleteMessages(r.Context(), []int64{id})
+	n, err := s.Store.DeleteMessages(r.Context(), []int64{m.ID})
 	if err != nil {
 		s.serverError(w, err)
 		return
@@ -219,6 +225,20 @@ func (s *Server) bulkMessages(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ctx := r.Context()
+	user := currentUser(r)
+	if len(req.IDs) > 0 && user.AllowedDeviceFilter() != nil {
+		devs, err := s.Store.MessageDeviceIDs(ctx, req.IDs)
+		if err != nil {
+			s.serverError(w, err)
+			return
+		}
+		for _, devID := range devs {
+			if !user.AllowsDevice(devID) {
+				writeError(w, http.StatusForbidden, "包含无权操作的设备短信")
+				return
+			}
+		}
+	}
 	var n int
 	var err error
 	switch req.Action {
@@ -232,7 +252,7 @@ func (s *Server) bulkMessages(w http.ResponseWriter, r *http.Request) {
 			s.Devices.Note(ctx, "info", "已删除 "+strconv.Itoa(n)+" 条短信")
 		}
 	case "read", "unread":
-		err = s.Store.MarkRead(ctx, req.IDs, req.Action == "read")
+		err = s.Store.MarkReadFor(ctx, req.IDs, req.Action == "read", user.AllowedDeviceFilter())
 		n = len(req.IDs)
 	case "reclassify":
 		if len(req.IDs) == 0 {
@@ -292,11 +312,12 @@ func (s *Server) listConversations(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	page, size := pageParams(r)
 	filter := store.Filter{
-		Query:    q.Get("q"),
-		Category: q.Get("category"),
-		Since:    since(q.Get("since")),
-		Unread:   q.Get("unread") == "1",
-		DeviceID: q.Get("device"),
+		Query:          q.Get("q"),
+		Category:       q.Get("category"),
+		Since:          since(q.Get("since")),
+		Unread:         q.Get("unread") == "1",
+		DeviceID:       q.Get("device"),
+		AllowedDevices: currentUser(r).AllowedDeviceFilter(),
 	}
 	convs, total, err := s.Store.ListConversations(r.Context(), filter, size, (page-1)*size)
 	if err != nil {
@@ -317,6 +338,10 @@ func (s *Server) conversationMessages(w http.ResponseWriter, r *http.Request) {
 	device, peer := q.Get("device"), store.NormalizePeer(q.Get("peer"))
 	if peer == "" {
 		writeError(w, http.StatusBadRequest, "缺少号码")
+		return
+	}
+	if !currentUser(r).AllowsDevice(device) {
+		writeError(w, http.StatusForbidden, "没有该设备的访问权限")
 		return
 	}
 	page, size := pageParams(r)
@@ -342,6 +367,10 @@ func (s *Server) readConversation(w http.ResponseWriter, r *http.Request) {
 	if !decode(w, r, &req) {
 		return
 	}
+	if !currentUser(r).AllowsDevice(req.DeviceID) {
+		writeError(w, http.StatusForbidden, "没有该设备的访问权限")
+		return
+	}
 	n, err := s.Store.MarkConversationRead(r.Context(), req.DeviceID, store.NormalizePeer(req.Peer))
 	if err != nil {
 		s.serverError(w, err)
@@ -356,6 +385,10 @@ func (s *Server) readConversation(w http.ResponseWriter, r *http.Request) {
 func (s *Server) deleteConversation(w http.ResponseWriter, r *http.Request) {
 	var req conversationRequest
 	if !decode(w, r, &req) {
+		return
+	}
+	if !currentUser(r).AllowsDevice(req.DeviceID) {
+		writeError(w, http.StatusForbidden, "没有该设备的访问权限")
 		return
 	}
 	peer := store.NormalizePeer(req.Peer)
@@ -378,6 +411,10 @@ func (s *Server) sendMessage(w http.ResponseWriter, r *http.Request) {
 		Text     string `json:"text"`
 	}
 	if !decode(w, r, &req) {
+		return
+	}
+	if !currentUser(r).AllowsDevice(req.DeviceID) {
+		writeError(w, http.StatusForbidden, "没有该设备的访问权限")
 		return
 	}
 	svc := s.Devices.Device(req.DeviceID)

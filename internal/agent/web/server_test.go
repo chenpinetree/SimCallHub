@@ -830,3 +830,151 @@ func TestBearerAuthAndCloudSettingsAPI(t *testing.T) {
 		t.Fatalf("unbind failed: status=%d out=%+v", resp.StatusCode, cloudOut)
 	}
 }
+
+func TestMultiUserRBACAndDeviceIsolation(t *testing.T) {
+	e := newTestEnv(t)
+	ctx := context.Background()
+
+	// Seed two devices and messages on each.
+	if _, err := e.store.SeeDevice(ctx, store.Device{ID: "dev1", Name: "卡1", Enabled: true}, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.store.SeeDevice(ctx, store.Device{ID: "dev2", Name: "卡2", Enabled: true}, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	for i, dev := range []string{"dev1", "dev2"} {
+		if _, err := e.store.SaveSegment(ctx, store.Segment{
+			PDUHash: "rbac-" + dev, PDU: "p", Sender: "10086", SentAt: time.Now().Add(time.Duration(i) * time.Second), ReceivedAt: time.Now(),
+			Total: 1, Seq: 1, Body: "来自" + dev, DeviceID: dev,
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	msgs, err := e.store.AssemblePending(ctx, time.Now(), time.Hour, nil)
+	if err != nil || len(msgs) != 2 {
+		t.Fatalf("AssemblePending: %v %d", err, len(msgs))
+	}
+	var dev2MsgID int64
+	for _, m := range msgs {
+		if m.DeviceID == "dev2" {
+			dev2MsgID = m.ID
+		}
+	}
+
+	// Verify EnsureDefaultAdmin leaves existing admin untouched, and works on fresh DB.
+	created, err := EnsureDefaultAdmin(ctx, e.store)
+	if err != nil || created {
+		t.Fatalf("EnsureDefaultAdmin on existing DB = (%v, %v)", created, err)
+	}
+
+	e.login(t)
+
+	// Admin cannot be deleted.
+	if code := e.call(t, "DELETE", "/api/users/admin", nil, nil); code != http.StatusUnprocessableEntity {
+		t.Fatalf("delete admin status = %d", code)
+	}
+
+	// Admin renames self and updates password while keeping session alive.
+	if code := e.call(t, "PUT", "/api/users/admin", map[string]any{
+		"username": "boss",
+		"password": "newpass",
+	}, nil); code != http.StatusOK {
+		t.Fatalf("rename admin status = %d", code)
+	}
+	var sess struct {
+		Authenticated bool   `json:"authenticated"`
+		Username      string `json:"username"`
+		Role          string `json:"role"`
+	}
+	if code := e.call(t, "GET", "/api/session", nil, &sess); code != http.StatusOK || !sess.Authenticated || sess.Username != "boss" || sess.Role != store.RoleAdmin {
+		t.Fatalf("admin session after rename = %d %+v", code, sess)
+	}
+
+	// Create sub-account "alice" restricted to dev1, default perms (SMS/Calls/Contacts ON, rest OFF).
+	if code := e.call(t, "POST", "/api/users", map[string]any{
+		"username":       "alice",
+		"password":       "1234",
+		"deviceScope":    store.DeviceScopeSelected,
+		"allowedDevices": []string{"dev1"},
+		"note":           "仅看卡1",
+	}, nil); code != http.StatusOK {
+		t.Fatalf("create sub-user status = %d", code)
+	}
+
+	// Log in as alice with a separate cookie jar.
+	aliceJar, _ := cookiejar.New(nil)
+	alice := &testEnv{ts: e.ts, client: &http.Client{Jar: aliceJar}, store: e.store}
+	if code := alice.call(t, "POST", "/api/login", map[string]string{"username": "alice", "password": "1234"}, nil); code != http.StatusOK {
+		t.Fatalf("alice login status = %d", code)
+	}
+
+	// Alice sees ONLY dev1 messages, NOT dev2.
+	var list struct {
+		Items []struct {
+			ID       int64  `json:"id"`
+			DeviceID string `json:"deviceId"`
+		} `json:"items"`
+		Total int `json:"total"`
+	}
+	if code := alice.call(t, "GET", "/api/messages", nil, &list); code != http.StatusOK || list.Total != 1 || list.Items[0].DeviceID != "dev1" {
+		t.Fatalf("alice messages = %d %+v", code, list)
+	}
+	// Alice cannot fetch dev2 message directly.
+	if code := alice.call(t, "GET", "/api/messages/"+itoa(dev2MsgID), nil, nil); code != http.StatusForbidden {
+		t.Fatalf("alice dev2 message status = %d", code)
+	}
+	// Alice can read /api/categories, but is forbidden from /api/events, /api/users, /api/settings/*, and PATCH /api/devices/dev1.
+	if code := alice.call(t, "GET", "/api/categories", nil, nil); code != http.StatusOK {
+		t.Fatalf("alice categories status = %d", code)
+	}
+	for _, tc := range []struct{ method, path string }{
+		{"GET", "/api/events"},
+		{"GET", "/api/users"},
+		{"GET", "/api/settings/notify"},
+		{"GET", "/api/settings/classifier"},
+		{"GET", "/api/settings/cloud"},
+		{"GET", "/api/settings/sip"},
+		{"GET", "/api/settings/assistant"},
+		{"PATCH", "/api/devices/dev1"},
+	} {
+		if code := alice.call(t, tc.method, tc.path, map[string]any{}, nil); code != http.StatusForbidden {
+			t.Fatalf("alice %s %s expected 403, got %d", tc.method, tc.path, code)
+		}
+	}
+
+	// Admin disables alice -> existing session immediately rejected, login returns 403.
+	if code := e.call(t, "PUT", "/api/users/alice", map[string]any{"disabled": true}, nil); code != http.StatusOK {
+		t.Fatalf("disable alice status = %d", code)
+	}
+	if code := alice.call(t, "GET", "/api/messages", nil, nil); code != http.StatusUnauthorized {
+		t.Fatalf("disabled alice session status = %d", code)
+	}
+	if code := alice.call(t, "POST", "/api/login", map[string]string{"username": "alice", "password": "1234"}, nil); code != http.StatusForbidden {
+		t.Fatalf("disabled alice login status = %d", code)
+	}
+
+	// Admin re-enables alice and grants logs + settingsSip permissions.
+	perms := store.DefaultSubUserPermissions()
+	perms.Logs = true
+	perms.SettingsSIP = true
+	if code := e.call(t, "PUT", "/api/users/alice", map[string]any{
+		"disabled":    false,
+		"permissions": perms,
+	}, nil); code != http.StatusOK {
+		t.Fatalf("update alice perms status = %d", code)
+	}
+	if code := alice.call(t, "POST", "/api/login", map[string]string{"username": "alice", "password": "1234"}, nil); code != http.StatusOK {
+		t.Fatalf("re-enabled alice login status = %d", code)
+	}
+	if code := alice.call(t, "GET", "/api/events", nil, nil); code != http.StatusOK {
+		t.Fatalf("alice granted logs status = %d", code)
+	}
+
+	// Admin deletes alice.
+	if code := e.call(t, "DELETE", "/api/users/alice", nil, nil); code != http.StatusOK {
+		t.Fatalf("delete alice status = %d", code)
+	}
+	if code := alice.call(t, "GET", "/api/messages", nil, nil); code != http.StatusUnauthorized {
+		t.Fatalf("deleted alice session status = %d", code)
+	}
+}

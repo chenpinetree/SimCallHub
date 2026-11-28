@@ -1,7 +1,7 @@
 import { Component, type ErrorInfo, type ReactNode, useEffect } from "react";
-import { Route, Routes } from "react-router-dom";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { api } from "./lib/api";
+import { Navigate, Route, Routes } from "react-router-dom";
+import { useQueryClient } from "@tanstack/react-query";
+import { hasAnySettingsPerm, hasPerm, useSession } from "./lib/auth";
 import { useLiveUpdates } from "./lib/hooks";
 import { Layout } from "./components/Layout";
 import { Spinner } from "./components/ui";
@@ -49,11 +49,12 @@ class ErrorBoundary extends Component<{ children: ReactNode }, { error: Error | 
 
 export function App() {
   const qc = useQueryClient();
-  const session = useQuery({ queryKey: ["session"], queryFn: () => api.get<{ authenticated: boolean }>("/api/session"), staleTime: Infinity });
-  const authed = session.data?.authenticated === true;
+  const session = useSession();
+  const sess = session.data;
+  const authed = sess?.authenticated === true;
   const live = useLiveUpdates(authed);
 
-  // Any 401 (expired session, password changed elsewhere) returns to login.
+  // Any 401 (expired session, password changed or account disabled) returns to login.
   useEffect(() => {
     const onUnauthorized = () => qc.setQueryData(["session"], { authenticated: false });
     window.addEventListener("simcallhub:unauthorized", onUnauthorized);
@@ -67,19 +68,28 @@ export function App() {
       </div>
     );
   }
-  if (!authed) return <Login onLogin={() => qc.setQueryData(["session"], { authenticated: true })} />;
+  if (!authed) {
+    return (
+      <Login
+        onLogin={(info) => {
+          qc.clear();
+          qc.setQueryData(["session"], info);
+        }}
+      />
+    );
+  }
 
   return (
     <ErrorBoundary>
       <Routes>
         <Route element={<Layout live={live} />}>
           <Route index element={<Dashboard />} />
-          <Route path="messages" element={<Messages />} />
-          <Route path="calls" element={<Calls />} />
-          <Route path="contacts" element={<Contacts />} />
-          <Route path="device" element={<Device />} />
-          <Route path="settings" element={<SettingsPage />} />
-          <Route path="logs" element={<Logs />} />
+          <Route path="messages" element={hasPerm(sess, "messages") ? <Messages /> : <Navigate to="/" replace />} />
+          <Route path="calls" element={hasPerm(sess, "calls") ? <Calls /> : <Navigate to="/" replace />} />
+          <Route path="contacts" element={hasPerm(sess, "contacts") ? <Contacts /> : <Navigate to="/" replace />} />
+          <Route path="device" element={hasPerm(sess, "device") ? <Device /> : <Navigate to="/" replace />} />
+          <Route path="settings" element={hasAnySettingsPerm(sess) ? <SettingsPage /> : <Navigate to="/" replace />} />
+          <Route path="logs" element={hasPerm(sess, "logs") ? <Logs /> : <Navigate to="/" replace />} />
           <Route path="*" element={<Dashboard />} />
         </Route>
       </Routes>

@@ -95,7 +95,7 @@ func (s *Server) toCallRecordJSON(c store.CallRecord) callRecordJSON {
 func (s *Server) listCalls(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	page, size := pageParams(r)
-	calls, total, err := s.Store.ListCalls(r.Context(), q.Get("device"), callKind(q), size, (page-1)*size)
+	calls, total, err := s.Store.ListCallsFor(r.Context(), q.Get("device"), callKind(q), currentUser(r).AllowedDeviceFilter(), size, (page-1)*size)
 	if err != nil {
 		s.serverError(w, err)
 		return
@@ -108,7 +108,7 @@ func (s *Server) listCalls(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) markCallsSeen(w http.ResponseWriter, r *http.Request) {
-	if err := s.Store.MarkCallsSeen(r.Context()); err != nil {
+	if err := s.Store.MarkCallsSeenFor(r.Context(), currentUser(r).AllowedDeviceFilter()); err != nil {
 		s.serverError(w, err)
 		return
 	}
@@ -122,6 +122,20 @@ func (s *Server) deleteCalls(w http.ResponseWriter, r *http.Request) {
 	}
 	if !decode(w, r, &req) {
 		return
+	}
+	user := currentUser(r)
+	if len(req.IDs) > 0 && user.AllowedDeviceFilter() != nil {
+		devs, err := s.Store.CallDeviceIDs(r.Context(), req.IDs)
+		if err != nil {
+			s.serverError(w, err)
+			return
+		}
+		for _, devID := range devs {
+			if !user.AllowsDevice(devID) {
+				writeError(w, http.StatusForbidden, "包含无权操作的设备通话记录")
+				return
+			}
+		}
 	}
 	files, err := s.Store.CallRecordings(r.Context(), req.IDs)
 	if err != nil {
@@ -155,7 +169,15 @@ func (s *Server) callRecording(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	c, err := s.Store.GetCall(r.Context(), id)
-	if err != nil || c.Recording == "" || s.RecordingDir == "" {
+	if err != nil {
+		writeError(w, http.StatusNotFound, "这通电话没有录音")
+		return
+	}
+	if !currentUser(r).AllowsDevice(c.DeviceID) {
+		writeError(w, http.StatusForbidden, "没有该设备的访问权限")
+		return
+	}
+	if c.Recording == "" || s.RecordingDir == "" {
 		writeError(w, http.StatusNotFound, "这通电话没有录音")
 		return
 	}
@@ -381,7 +403,7 @@ func needsCallback(note string) bool {
 // callbacks lists the calls of the last 3 days still waiting for a call
 // back: missed calls, and calls the assistant says need one.
 func (s *Server) callbacks(w http.ResponseWriter, r *http.Request) {
-	calls, err := s.Store.CallbackCandidates(r.Context(), time.Now().Add(-72*time.Hour))
+	calls, err := s.Store.CallbackCandidatesFor(r.Context(), time.Now().Add(-72*time.Hour), currentUser(r).AllowedDeviceFilter())
 	if err != nil {
 		s.serverError(w, err)
 		return
@@ -407,6 +429,16 @@ func (s *Server) callbackDone(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "通话编号无效")
+		return
+	}
+	if c, err := s.Store.GetCall(r.Context(), id); errors.Is(err, store.ErrNotFound) {
+		writeError(w, http.StatusNotFound, "通话记录不存在")
+		return
+	} else if err != nil {
+		s.serverError(w, err)
+		return
+	} else if !currentUser(r).AllowsDevice(c.DeviceID) {
+		writeError(w, http.StatusForbidden, "没有该设备的访问权限")
 		return
 	}
 	if err := s.Store.MarkCallbackDone(r.Context(), id); errors.Is(err, store.ErrNotFound) {

@@ -3,7 +3,7 @@ import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState, type R
 import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { AlertCircle, ArrowLeft, Check, Copy, Download, Inbox, Loader2, MessageSquarePlus, MessagesSquare, MoreHorizontal, Paperclip, Phone, RotateCw, ScrollText, Search, Send, ShieldCheck, Tags, Trash2, UserPlus, X } from "lucide-react";
-import { api, type ClassifierSettings, type Conversation, type Finding, type Message, type MMSPart, type Page, type Status } from "../lib/api";
+import { api, type CategoriesResponse, type Conversation, type Finding, type Message, type MMSPart, type Page, type Status } from "../lib/api";
 import { useStatus } from "../lib/hooks";
 import { bytes, dateTime, shortTime } from "../lib/format";
 import { categoryStyle, sourceLabel } from "../lib/categories";
@@ -568,7 +568,7 @@ function BubbleMenu({ m, open, setOpen, align }: { m: Message; open: boolean; se
   const [confirm, setConfirm] = useState(false);
   const [redacted, setRedacted] = useState(false);
   const [why, setWhy] = useState(false);
-  const { data: classifier } = useQuery({ queryKey: ["classifier"], queryFn: () => api.get<ClassifierSettings>("/api/settings/classifier"), enabled: open });
+  const { data: classifier } = useQuery({ queryKey: ["categories"], queryFn: () => api.get<CategoriesResponse>("/api/categories"), enabled: open });
   const refresh = () => {
     qc.invalidateQueries({ queryKey: ["thread"] });
     qc.invalidateQueries({ queryKey: ["conversations"] });

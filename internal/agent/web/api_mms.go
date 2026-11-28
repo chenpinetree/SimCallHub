@@ -68,10 +68,11 @@ func (s *Server) downloadMMS(w http.ResponseWriter, r *http.Request) {
 var inlineTypes = map[string]bool{"image/jpeg": true, "image/png": true, "image/gif": true, "image/webp": true, "image/bmp": true}
 
 func (s *Server) mmsPartData(w http.ResponseWriter, r *http.Request) {
-	id, valid := s.messageID(w, r)
-	if !valid {
+	m, found := s.loadMessage(w, r)
+	if !found {
 		return
 	}
+	id := m.ID
 	partID, err := strconv.ParseInt(r.PathValue("part"), 10, 64)
 	if err != nil || partID <= 0 {
 		writeError(w, http.StatusBadRequest, "无效的彩信附件")

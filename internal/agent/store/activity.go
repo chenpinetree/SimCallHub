@@ -28,6 +28,12 @@ var spamCategories = map[string]bool{"营销推广": true, "推销骚扰": true}
 // Activity buckets incoming SMS and calls by hour over the last 24 hours and
 // by local day over the last 7 days.
 func (s *Store) Activity(ctx context.Context, now time.Time) (Activity, error) {
+	return s.ActivityFor(ctx, now, nil, true, true)
+}
+
+// ActivityFor buckets incoming SMS and calls restricted to allowedDevices (nil = all)
+// and optional SMS/call visibility flags.
+func (s *Store) ActivityFor(ctx context.Context, now time.Time, allowedDevices []string, includeSMS, includeCalls bool) (Activity, error) {
 	hourStart := now.Truncate(time.Hour).Add(-23 * time.Hour)
 	y, m, d := now.Date()
 	dayStart := time.Date(y, m, d, 0, 0, 0, 0, now.Location()).AddDate(0, 0, -6)
@@ -37,6 +43,16 @@ func (s *Store) Activity(ctx context.Context, now time.Time) (Activity, error) {
 	}
 	for i := range a.Days {
 		a.Days[i].Start = dayStart.AddDate(0, 0, i)
+	}
+	if allowedDevices != nil && len(allowedDevices) == 0 {
+		return a, nil
+	}
+	devClause := ""
+	var devArgs []any
+	if allowedDevices != nil {
+		in, list := inStrings(allowedDevices)
+		devClause = " AND device_id IN " + in
+		devArgs = list
 	}
 	// add counts an event into its hour and day buckets.
 	add := func(at time.Time, f func(*ActivityBucket)) {
@@ -57,53 +73,60 @@ func (s *Store) Activity(ctx context.Context, now time.Time) (Activity, error) {
 		from = hourStart
 	}
 
-	rows, err := s.db.QueryContext(ctx, `SELECT received_at, category FROM messages WHERE direction = 'in' AND received_at >= ?`, from.Unix())
-	if err != nil {
-		return a, err
-	}
-	for rows.Next() {
-		var at int64
-		var category string
-		if err := rows.Scan(&at, &category); err != nil {
-			rows.Close()
+	if includeSMS {
+		rows, err := s.db.QueryContext(ctx, `SELECT received_at, category FROM messages WHERE direction = 'in' AND received_at >= ?`+devClause, append([]any{from.Unix()}, devArgs...)...)
+		if err != nil {
 			return a, err
 		}
-		spam, code := spamCategories[category], category == "验证码"
-		add(time.Unix(at, 0), func(b *ActivityBucket) {
-			b.SMS++
-			if spam {
-				b.Spam++
+		for rows.Next() {
+			var at int64
+			var category string
+			if err := rows.Scan(&at, &category); err != nil {
+				rows.Close()
+				return a, err
 			}
-			if code {
-				b.Codes++
-			}
-		})
-	}
-	rows.Close()
-	if err := rows.Err(); err != nil {
-		return a, err
+			spam, code := spamCategories[category], category == "验证码"
+			add(time.Unix(at, 0), func(b *ActivityBucket) {
+				b.SMS++
+				if spam {
+					b.Spam++
+				}
+				if code {
+					b.Codes++
+				}
+			})
+		}
+		rows.Close()
+		if err := rows.Err(); err != nil {
+			return a, err
+		}
 	}
 
-	rows, err = s.db.QueryContext(ctx, `SELECT started_at, status, handled_by FROM calls WHERE direction = 'in' AND started_at >= ?`, from.Unix())
-	if err != nil {
-		return a, err
-	}
-	defer rows.Close()
-	for rows.Next() {
-		var at int64
-		var status, by string
-		if err := rows.Scan(&at, &status, &by); err != nil {
+	if includeCalls {
+		rows, err := s.db.QueryContext(ctx, `SELECT started_at, status, handled_by FROM calls WHERE direction = 'in' AND started_at >= ?`+devClause, append([]any{from.Unix()}, devArgs...)...)
+		if err != nil {
 			return a, err
 		}
-		add(time.Unix(at, 0), func(b *ActivityBucket) {
-			b.Calls++
-			if by == HandledByAssistant {
-				b.AI++
+		defer rows.Close()
+		for rows.Next() {
+			var at int64
+			var status, by string
+			if err := rows.Scan(&at, &status, &by); err != nil {
+				return a, err
 			}
-			if status == CallMissed || status == CallRejected {
-				b.Missed++
-			}
-		})
+			add(time.Unix(at, 0), func(b *ActivityBucket) {
+				b.Calls++
+				if by == HandledByAssistant {
+					b.AI++
+				}
+				if status == CallMissed || status == CallRejected {
+					b.Missed++
+				}
+			})
+		}
+		if err := rows.Err(); err != nil {
+			return a, err
+		}
 	}
-	return a, rows.Err()
+	return a, nil
 }

@@ -1,8 +1,9 @@
 import clsx from "clsx";
-import { BookUser, Cpu, LayoutDashboard, LogOut, MessageSquareText, Monitor, Moon, Phone, ScrollText, Settings, Sparkles, Sun, Wand2 } from "lucide-react";
+import { BookUser, Cpu, LayoutDashboard, LogOut, MessageSquareText, Monitor, Moon, Phone, ScrollText, Settings, Shield, Sparkles, Sun, User, Wand2 } from "lucide-react";
 import { NavLink, Outlet } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
-import { api } from "../lib/api";
+import { api, type PermissionKey } from "../lib/api";
+import { hasAnySettingsPerm, hasPerm, isAdmin, useSession } from "../lib/auth";
 import { useStatus } from "../lib/hooks";
 import { usePrefs, type Theme } from "../lib/prefs";
 import { signal } from "../lib/format";
@@ -11,14 +12,14 @@ import { Dot, IconButton, Segmented } from "./ui";
 import { SignalBars } from "./Visuals";
 import { CallCenter } from "./CallCenter";
 
-const nav = [
+const allNav: { to: string; label: string; icon: typeof LayoutDashboard; end?: boolean; perm?: PermissionKey | "anySettings" }[] = [
   { to: "/", label: "概览", icon: LayoutDashboard, end: true },
-  { to: "/messages", label: "短信", icon: MessageSquareText },
-  { to: "/calls", label: "电话", icon: Phone },
-  { to: "/contacts", label: "通讯录", icon: BookUser },
-  { to: "/device", label: "设备", icon: Cpu },
-  { to: "/settings", label: "设置", icon: Settings },
-  { to: "/logs", label: "日志", icon: ScrollText },
+  { to: "/messages", label: "短信", icon: MessageSquareText, perm: "messages" },
+  { to: "/calls", label: "电话", icon: Phone, perm: "calls" },
+  { to: "/contacts", label: "通讯录", icon: BookUser, perm: "contacts" },
+  { to: "/device", label: "设备", icon: Cpu, perm: "device" },
+  { to: "/settings", label: "设置", icon: Settings, perm: "anySettings" },
+  { to: "/logs", label: "日志", icon: ScrollText, perm: "logs" },
 ];
 
 const themeIcon: Record<Theme, typeof Sun> = { system: Monitor, dark: Moon, light: Sun };
@@ -26,12 +27,20 @@ const themeNext: Record<Theme, Theme> = { system: "dark", dark: "light", light: 
 const themeLabel: Record<Theme, string> = { system: "跟随系统", dark: "深色", light: "浅色" };
 
 export function Layout({ live }: { live: boolean }) {
+  const { data: session } = useSession();
   const { data: status } = useStatus();
   const { mode, setMode, theme, setTheme } = usePrefs();
   const qc = useQueryClient();
-  const unread = status?.messages.unread ?? 0;
-  const missed = status?.missedCalls ?? 0;
+  const nav = allNav.filter((item) => {
+    if (!item.perm) return true;
+    if (item.perm === "anySettings") return hasAnySettingsPerm(session);
+    return hasPerm(session, item.perm);
+  });
+  const unread = hasPerm(session, "messages") ? (status?.messages.unread ?? 0) : 0;
+  const missed = hasPerm(session, "calls") ? (status?.missedCalls ?? 0) : 0;
   const badge = (to: string) => (to === "/messages" ? unread : to === "/calls" ? missed : 0);
+  const canOpenDevice = hasPerm(session, "device");
+  const admin = isAdmin(session);
 
   const logout = async () => {
     await api.post("/api/logout").catch(() => {});
@@ -102,17 +111,31 @@ export function Layout({ live }: { live: boolean }) {
             </div>
             <div className="flex min-w-0 flex-1 items-center gap-2 overflow-hidden">
               {status && (
-                <NavLink to="/device" className="flex min-w-0 items-center gap-2 rounded-full bg-panel-2 px-3 py-1 text-xs ring-1 ring-line hover:ring-line-strong">
-                  <Dot tone={pillTone} pulse={pillTone !== "bad"} />
-                  <span className="truncate font-medium">{pillText}</span>
-                  {single && sig && (
-                    <>
-                      <span className="hidden text-line-strong sm:inline">|</span>
-                      <span className="hidden truncate text-muted sm:inline">{single.modem.operator || "无运营商"}</span>
-                      <SignalBars bars={sig.bars} tone={sig.tone} className="hidden h-3 sm:flex" />
-                    </>
-                  )}
-                </NavLink>
+                canOpenDevice ? (
+                  <NavLink to="/device" className="flex min-w-0 items-center gap-2 rounded-full bg-panel-2 px-3 py-1 text-xs ring-1 ring-line hover:ring-line-strong">
+                    <Dot tone={pillTone} pulse={pillTone !== "bad"} />
+                    <span className="truncate font-medium">{pillText}</span>
+                    {single && sig && (
+                      <>
+                        <span className="hidden text-line-strong sm:inline">|</span>
+                        <span className="hidden truncate text-muted sm:inline">{single.modem.operator || "无运营商"}</span>
+                        <SignalBars bars={sig.bars} tone={sig.tone} className="hidden h-3 sm:flex" />
+                      </>
+                    )}
+                  </NavLink>
+                ) : (
+                  <div className="flex min-w-0 items-center gap-2 rounded-full bg-panel-2 px-3 py-1 text-xs ring-1 ring-line">
+                    <Dot tone={pillTone} pulse={pillTone !== "bad"} />
+                    <span className="truncate font-medium">{pillText}</span>
+                    {single && sig && (
+                      <>
+                        <span className="hidden text-line-strong sm:inline">|</span>
+                        <span className="hidden truncate text-muted sm:inline">{single.modem.operator || "无运营商"}</span>
+                        <SignalBars bars={sig.bars} tone={sig.tone} className="hidden h-3 sm:flex" />
+                      </>
+                    )}
+                  </div>
+                )
               )}
               <span className={clsx("hidden items-center gap-1.5 text-[11px] text-subtle md:flex")} title={live ? "实时推送已连接" : "实时推送未连接，正在定时刷新"}>
                 <span className={clsx("size-1.5 rounded-full", live ? "bg-ok" : "bg-subtle")} />
@@ -130,6 +153,15 @@ export function Layout({ live }: { live: boolean }) {
                 ]}
               />
             </div>
+            {session?.username && (
+              <span
+                className="hidden items-center gap-1.5 rounded-full bg-panel-2 px-2.5 py-1 text-xs text-muted ring-1 ring-line sm:inline-flex"
+                title={admin ? "管理员账号" : "子账号"}
+              >
+                {admin ? <Shield className="size-3.5 text-accent" /> : <User className="size-3.5 text-subtle" />}
+                <span className="max-w-28 truncate font-mono text-fg">{session.username}</span>
+              </span>
+            )}
             <IconButton icon={ThemeIcon} label={`主题：${themeLabel[theme]}（点击切换）`} onClick={() => setTheme(themeNext[theme])} />
             <IconButton icon={LogOut} label="退出登录" onClick={logout} />
           </div>

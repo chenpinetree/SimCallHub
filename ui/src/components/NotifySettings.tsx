@@ -2,7 +2,7 @@ import clsx from "clsx";
 import { useEffect, useState, type ReactNode } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { AlertTriangle, BellRing, Bot, Check, ChevronDown, CircleHelp, MessageSquareText, PhoneCall, PhoneMissed, Save, Search, Send } from "lucide-react";
-import { api, Unclassified, type ClassifierSettings, type NotifyRules, type NotifySettings, type TelegramChat, type TelegramConfig, type WebhookKind, type WebhookSettings } from "../lib/api";
+import { api, Unclassified, type CategoriesResponse, type NotifyRules, type NotifySettings, type TelegramChat, type TelegramConfig, type WebhookKind, type WebhookSettings } from "../lib/api";
 import { categoryStyle } from "../lib/categories";
 import { usePrefs } from "../lib/prefs";
 import { Alert, Badge, Button, Card, CardBody, CardHeader, Field, Input, Spinner, Switch, useToast } from "./ui";
@@ -21,8 +21,8 @@ function channelState(data: NotifySettings, kind: Kind): { configured: boolean; 
   return { configured: data[kind].hasUrl, enabled: data[kind].enabled };
 }
 
-export function useNotify() {
-  return useQuery({ queryKey: ["notify"], queryFn: () => api.get<NotifySettings>("/api/settings/notify") });
+export function useNotify(enabled = true) {
+  return useQuery({ queryKey: ["notify"], queryFn: () => api.get<NotifySettings>("/api/settings/notify"), enabled });
 }
 
 // activeChannels counts the channels that are on and set up.
@@ -384,7 +384,7 @@ function CategoryOption({ name, label, description, checked, onChange }: { name:
 function RulesCard({ data }: { data: NotifySettings }) {
   const toast = useToast();
   const qc = useQueryClient();
-  const { data: classifier } = useQuery({ queryKey: ["classifier"], queryFn: () => api.get<ClassifierSettings>("/api/settings/classifier") });
+  const { data: classifier } = useQuery({ queryKey: ["categories"], queryFn: () => api.get<CategoriesResponse>("/api/categories") });
   const [form, setForm] = useState<NotifyRules>(data.rules);
   const [busy, setBusy] = useState(false);
   const saved = JSON.stringify(data.rules);
