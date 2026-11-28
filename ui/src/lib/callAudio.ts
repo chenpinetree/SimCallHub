@@ -11,6 +11,7 @@ export interface AudioSnapshot {
   deviceId: string;
   muted: boolean;
   micOk: boolean; // false: listening only
+  blocked: boolean; // true when browser autoplay policy suspended playback
   error: string;
   level: number; // 0..1 microphone level, for the meter
   rx: number; // frames received from the call, to tell silence from no audio
@@ -21,7 +22,7 @@ export interface AudioSnapshot {
   micInfo: string;
 }
 
-let state: AudioSnapshot = { phase: "idle", deviceId: "", muted: false, micOk: false, error: "", level: 0, rx: 0, micSilent: false, micInfo: "" };
+let state: AudioSnapshot = { phase: "idle", deviceId: "", muted: false, micOk: false, blocked: false, error: "", level: 0, rx: 0, micSilent: false, micInfo: "" };
 let rx = 0;
 const listeners = new Set<() => void>();
 const set = (patch: Partial<AudioSnapshot>) => {
@@ -40,6 +41,25 @@ let recorder: AudioWorkletNode | null = null;
 // before that switch receives only silence from it.
 let captureCtx: AudioContext | null = null;
 let micSource: MediaStreamAudioSourceNode | null = null; // kept so it is not collected
+let unlockBound = false;
+
+function onGestureUnlock() {
+  void callAudio.resume();
+}
+
+function bindUnlock() {
+  if (unlockBound || typeof window === "undefined") return;
+  unlockBound = true;
+  window.addEventListener("pointerdown", onGestureUnlock, { passive: true });
+  window.addEventListener("keydown", onGestureUnlock, { passive: true });
+}
+
+function unbindUnlock() {
+  if (!unlockBound || typeof window === "undefined") return;
+  unlockBound = false;
+  window.removeEventListener("pointerdown", onGestureUnlock);
+  window.removeEventListener("keydown", onGestureUnlock);
+}
 
 function micError(e: unknown): string {
   if (!window.isSecureContext) return "浏览器只允许在 HTTPS 或 localhost 下使用麦克风，当前只能听不能说";
@@ -131,14 +151,21 @@ async function attachMic(socket: WebSocket) {
 }
 
 export const callAudio = {
-  // start must run inside a click handler: browsers only allow audio after a
-  // user gesture.
+  // start attaches browser speaker and microphone to a device's call audio.
+  // If called outside a user gesture and the browser suspends AudioContext,
+  // blocked is set so a single click anywhere or on "恢复声音" unlocks playback.
   async start(deviceId: string) {
     if (state.phase !== "idle" && state.phase !== "error" && state.deviceId === deviceId) return;
     callAudio.stop();
-    set({ phase: "connecting", deviceId, error: "", muted: false, micOk: false, rx: 0, micSilent: false, micInfo: "" });
+    set({ phase: "connecting", deviceId, error: "", muted: false, micOk: false, blocked: false, rx: 0, micSilent: false, micInfo: "" });
     try {
       ctx = new AudioContext({ latencyHint: "interactive" });
+      ctx.onstatechange = () => {
+        if (!ctx) return;
+        const blocked = ctx.state === "suspended";
+        if (state.blocked !== blocked) set({ blocked });
+        if (!blocked) unbindUnlock();
+      };
       await ctx.audioWorklet.addModule("/pcm-worklet.js");
       player = new AudioWorkletNode(ctx, "pcm-player", { outputChannelCount: [1] });
       player.connect(ctx.destination);
@@ -154,27 +181,47 @@ export const callAudio = {
         if (++rx === 1 || rx % 25 === 0) set({ rx });
       };
       socket.onclose = () => {
-        if (ws === socket && (state.phase === "live" || state.phase === "connecting")) set({ phase: "error", error: "通话音频连接已断开" });
+        if (ws === socket && (state.phase === "live" || state.phase === "connecting")) set({ phase: "error", blocked: false, error: "通话音频连接已断开" });
       };
       // The speaker works as soon as the socket is open; the microphone
       // joins when the permission prompt is answered, so an unanswered
       // prompt never blocks hearing the other side.
       socket.onopen = () => set({ phase: "live", error: state.micOk ? "" : "正在请求麦克风权限…" });
       void attachMic(socket);
-      await ctx.resume();
+      await ctx.resume().catch(() => {});
+      if (ctx && ctx.state === "suspended") {
+        set({ blocked: true });
+        bindUnlock();
+      }
     } catch (e) {
       callAudio.stop();
       set({ phase: "error", deviceId, error: `无法启动通话音频：${(e as Error).message}` });
     }
   },
 
+  async resume() {
+    if (ctx && ctx.state === "suspended") {
+      await ctx.resume().catch(() => {});
+    }
+    if (captureCtx && captureCtx.state === "suspended") {
+      await captureCtx.resume().catch(() => {});
+    }
+    const blocked = ctx?.state === "suspended";
+    if (!blocked) unbindUnlock();
+    if (state.blocked !== blocked) set({ blocked });
+  },
+
   stop() {
+    unbindUnlock();
     if (ws) {
       ws.onclose = null;
       ws.close();
     }
     mic?.getTracks().forEach((t) => t.stop());
-    ctx?.close().catch(() => {});
+    if (ctx) {
+      ctx.onstatechange = null;
+      ctx.close().catch(() => {});
+    }
     captureCtx?.close().catch(() => {});
     ws = null;
     mic = null;
@@ -183,7 +230,7 @@ export const callAudio = {
     micSource = null;
     player = null;
     recorder = null;
-    if (state.phase !== "idle") set({ phase: "idle", level: 0, error: "" });
+    if (state.phase !== "idle" || state.blocked) set({ phase: "idle", blocked: false, level: 0, error: "" });
   },
 
   setMuted(muted: boolean) {

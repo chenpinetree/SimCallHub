@@ -177,6 +177,14 @@ function CallBar({ d, c }: { d: DeviceStatus; c: LiveCall }) {
   const ai = d.assistant?.active ? d.assistant : null;
   const [taking, setTaking] = useState(false);
 
+  // Automatically connect audio for normal (non-AI) outgoing/active calls
+  // without requiring an extra "接入声音" click.
+  useEffect(() => {
+    if (!ai && audio.phase === "idle") {
+      void callAudio.start(d.id);
+    }
+  }, [d.id, !!ai, audio.phase]);
+
   const takeOver = async () => {
     setTaking(true);
     // Audio starts inside the click so the browser lets it play.
@@ -216,22 +224,24 @@ function CallBar({ d, c }: { d: DeviceStatus; c: LiveCall }) {
       ? "正在旁听，对方听不到你"
       : "可以旁听或接过通话"
     : !mine
-    ? "声音未接到这个页面"
+    ? "正在自动接入声音…"
     : audio.phase === "connecting"
       ? "正在连接声音…"
       : audio.phase === "error"
         ? audio.error
-        : d.audio.error
-          ? d.audio.error
-          : !d.audio.active
-            ? "等待模组的声音…"
-            : audio.rx === 0
-              ? "已连接，还没有收到对方的声音"
-              : audio.micOk
-              ? audio.muted
-                ? "已静音"
-                : "声音已连接"
-              : audio.error;
+        : audio.blocked
+          ? "浏览器拦截了自动播放，点击页面任意处或「恢复声音」"
+          : d.audio.error
+            ? d.audio.error
+            : !d.audio.active
+              ? "等待模组的声音…"
+              : audio.rx === 0
+                ? "已连接，还没有收到对方的声音"
+                : audio.micOk
+                ? audio.muted
+                  ? "已静音"
+                  : "声音已连接"
+                : audio.error;
 
   return (
     <div className="fixed inset-x-0 bottom-20 z-[60] flex justify-center px-4 lg:bottom-6">
@@ -271,9 +281,19 @@ function CallBar({ d, c }: { d: DeviceStatus; c: LiveCall }) {
           </div>
         )}
         <div className="flex items-center gap-1">
-          {!mine && (
+          {ai && !mine && (
             <Button size="sm" icon={Headphones} onClick={() => callAudio.start(d.id)}>
-              {ai ? "旁听" : "接入声音"}
+              旁听
+            </Button>
+          )}
+          {!ai && mine && audio.blocked && (
+            <Button size="sm" variant="primary" icon={Volume2} onClick={() => callAudio.resume()}>
+              恢复声音
+            </Button>
+          )}
+          {!ai && audio.phase === "error" && (
+            <Button size="sm" icon={Headphones} onClick={() => callAudio.start(d.id)}>
+              重连声音
             </Button>
           )}
           {ai && (
