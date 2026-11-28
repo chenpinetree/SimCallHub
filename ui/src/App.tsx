@@ -56,7 +56,10 @@ export function App() {
 
   // Any 401 (expired session, password changed or account disabled) returns to login.
   useEffect(() => {
-    const onUnauthorized = () => qc.setQueryData(["session"], { authenticated: false });
+    const onUnauthorized = () => {
+      qc.setQueryData(["session"], { authenticated: false });
+      qc.removeQueries({ predicate: (q) => q.queryKey[0] !== "session" });
+    };
     window.addEventListener("simcallhub:unauthorized", onUnauthorized);
     return () => window.removeEventListener("simcallhub:unauthorized", onUnauthorized);
   }, [qc]);
@@ -72,7 +75,7 @@ export function App() {
     return (
       <Login
         onLogin={(info) => {
-          qc.clear();
+          qc.removeQueries({ predicate: (q) => q.queryKey[0] !== "session" });
           qc.setQueryData(["session"], info);
         }}
       />
